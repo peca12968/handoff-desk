@@ -1,0 +1,21 @@
+name: Verify HTTP edit conflicts
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  api:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: dotnet restore src --locked-mode
+      - run: dotnet build src -c Release --no-restore
+      - run: python -m unittest -v
