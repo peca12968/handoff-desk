@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 EXAMPLE = ROOT / "examples/conference.json"
 
 
-def evaluate(plan, assignments, absent):
+def evaluate(plan, assignments, absent, handover_at=None):
     """Score a complete roster independently by marking every occupied minute."""
     busy = {person: set() for person in plan["crew"]}
     filled = penalty = 0
@@ -26,7 +26,8 @@ def evaluate(plan, assignments, absent):
             return None
         for person in people:
             worker = plan["crew"][person]
-            if (person in absent or shift["skill"] not in worker["skills"]
+            unavailable = person in absent and (handover_at is None or shift["start"] >= handover_at)
+            if (unavailable or shift["skill"] not in worker["skills"]
                     or name not in worker["bids"] or occupied & busy[person]):
                 return None
             busy[person].update(occupied)
@@ -37,7 +38,7 @@ def evaluate(plan, assignments, absent):
     return filled, -penalty
 
 
-def exhaustive(plan, absent, published=None):
+def exhaustive(plan, absent, published=None, handover_at=None):
     groups = []
     for shift in plan["shifts"].values():
         limit = min(len(plan["crew"]), shift["need"])
@@ -46,7 +47,10 @@ def exhaustive(plan, absent, published=None):
     best = None
     for teams in itertools.product(*groups):
         assignments = dict(zip(plan["shifts"], teams, strict=True))
-        score = evaluate(plan, assignments, absent)
+        if handover_at is not None and any(set(assignments[name]) != set(published[name])
+                for name, shift in plan["shifts"].items() if shift["start"] < handover_at):
+            continue
+        score = evaluate(plan, assignments, absent, handover_at)
         if score is not None:
             if published is not None:
                 touched = set()
@@ -71,6 +75,72 @@ def small_plan(rng):
 
 
 class CrewTest(unittest.TestCase):
+    def test_handover_matches_independent_enumeration(self):
+        rng = random.Random(71583)
+        for case in range(100):
+            with self.subTest(case=case):
+                plan = small_plan(rng)
+                baseline = solve(plan)
+                published = {name: r["assigned"] for name, r in baseline["shifts"].items()}
+                minute = rng.randrange(7)
+                absent = {rng.choice(list(plan["crew"]))}
+                for worker in plan["crew"].values():
+                    for name in worker["bids"]:
+                        worker["bids"][name] = rng.randrange(12)
+                result = solve(plan, absent, baseline, minute)
+                rows = {name: r["assigned"] for name, r in result["shifts"].items()}
+                locked = sorted(n for n, s in plan["shifts"].items() if s["start"] < minute)
+                self.assertEqual(result["handover"], {"minute": minute, "locked_shifts": locked})
+                for name in locked:
+                    self.assertEqual(result["shifts"][name], baseline["shifts"][name])
+                filled, penalty = evaluate(plan, rows, absent, minute)
+                changed = set().union(*(set(published[n]) ^ set(rows[n]) for n in rows))
+                self.assertEqual((filled, -len(changed), penalty), exhaustive(plan, absent, published, minute))
+                self.assertEqual((result["filled"], result["changes"]["people"], result["penalty"]),
+                                 (filled, len(changed), -penalty))
+
+    def test_handover_cli_and_older_published_output(self):
+        cmd = [sys.executable, ROOT / "crew_cover.py", EXAMPLE]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "published.json"
+            baseline = json.loads(subprocess.check_output(cmd))
+            for legacy in (False, True):
+                if legacy:
+                    baseline.pop("shift_windows")
+                path.write_text(json.dumps(baseline), encoding="utf-8")
+                args = cmd + ["--baseline", path, "--absent", "lin", "--handover-at"]
+                boundary = json.loads(subprocess.check_output([*args, "120"]))
+                self.assertEqual((boundary["filled"], boundary["penalty"]), (5, 8))
+                self.assertEqual(boundary["changes"]["by_person"], {"lin": {"removed": ["helpdesk"], "added": []}})
+                self.assertEqual(boundary["shifts"]["registration"]["assigned"], ["lin", "yu"])
+                started = json.loads(subprocess.check_output([*args, "121"]))
+                self.assertEqual((started["filled"], started["changes"]["people"]), (6, 0))
+        failed = subprocess.run([*cmd, "--handover-at", "120"], capture_output=True)
+        self.assertEqual((failed.returncode, failed.stdout), (2, b""))
+
+    def test_handover_rejects_contradictory_history_and_permits_future_deletion(self):
+        plan = json.loads(EXAMPLE.read_text())
+        baseline = solve(plan)
+        def without(name):
+            updated = copy.deepcopy(plan)
+            del updated["shifts"][name]
+            for worker in updated["crew"].values():
+                worker["bids"].pop(name, None)
+            return updated
+        with self.assertRaisesRegex(ValueError, "removed or rescheduled"):
+            solve(without("registration"), baseline=baseline, handover_at=120)
+        self.assertNotIn("broadcast", solve(without("broadcast"), baseline=baseline, handover_at=120)["shifts"])
+        moved = copy.deepcopy(plan)
+        moved["shifts"]["registration"].update(start=200, end=220)
+        with self.assertRaisesRegex(ValueError, "removed or rescheduled"):
+            solve(moved, baseline=baseline, handover_at=120)
+        plan["crew"]["mei"]["budget_minutes"] = 119
+        with self.assertRaisesRegex(ValueError, "budget"):
+            solve(plan, baseline=baseline, handover_at=120)
+        plan["crew"]["mei"]["skills"].remove("audio")
+        with self.assertRaisesRegex(ValueError, "no longer eligible"):
+            solve(plan, baseline=baseline, handover_at=120)
+
     def test_replanning_matches_exhaustive_three_level_objective(self):
         rng = random.Random(8192)
         for i in range(100):

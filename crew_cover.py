@@ -77,22 +77,60 @@ def changed_people(model, candidates, previous):
     return sum(changed)
 
 
-def solve(plan, absent=(), baseline=None):
+def locked_teams(shifts, baseline, minute):
+    if baseline is None or not integer(minute):
+        raise ValueError("handover requires a published baseline and a nonnegative minute")
+    published = baseline["shifts"]
+    windows = baseline.get("shift_windows")
+    if "shift_windows" in baseline:
+        if not isinstance(windows, dict) or windows.keys() != published.keys():
+            raise ValueError("baseline shift windows must match its shifts")
+        for name, window in windows.items():
+            if (not isinstance(window, list) or len(window) != 2 or not integer(window[0])
+                    or not integer(window[1], window[0] + 1)):
+                raise ValueError(f"invalid published time window: {name}")
+            current = shifts.get(name)
+            if window[0] < minute or (current and current["start"] < minute):
+                if not current or window != [current["start"], current["end"]]:
+                    raise ValueError(f"already-started shift removed or rescheduled: {name}")
+    elif published.keys() - shifts.keys():
+        raise ValueError("cannot date removed shifts in an older baseline without shift_windows")
+
+    locked = {}
+    for name, shift in shifts.items():
+        if shift["start"] >= minute:
+            continue
+        if name not in published:
+            raise ValueError(f"already-started shift missing from baseline: {name}")
+        row = published[name]
+        team = set(row["assigned"])
+        if len(team) > shift["need"] or ("vacant" in row and
+                (not integer(row["vacant"]) or row["vacant"] + len(team) != shift["need"])):
+            raise ValueError(f"staffing requirement changed for already-started shift: {name}")
+        locked[name] = team
+    return locked
+
+
+def solve(plan, absent=(), baseline=None, handover_at=None):
     validate(plan)
     shifts, crew = plan["shifts"], plan["crew"]
     absent = set(absent)
     if unknown := absent - crew.keys():
         raise ValueError(f"unknown absent crew: {', '.join(sorted(unknown))}")
     previous = previous_assignments(baseline) if baseline is not None else None
+    locked = locked_teams(shifts, baseline, handover_at) if handover_at is not None else {}
     model = cp_model.CpModel()
     candidates = {name: {} for name in shifts}
     penalties = []
     for person, worker in crew.items():
-        if person in absent:
-            continue
         intervals, minutes = [], []
         for name, cost in worker["bids"].items():
             shift = shifts[name]
+            if name in locked:
+                if person not in locked[name]:
+                    continue
+            elif person in absent:
+                continue
             if shift["skill"] not in worker["skills"]:
                 continue
             duration = shift["end"] - shift["start"]
@@ -106,12 +144,18 @@ def solve(plan, absent=(), baseline=None):
         model.add(sum(minutes) <= worker["budget_minutes"])
     for name, options in candidates.items():
         model.add(sum(options.values()) <= shifts[name]["need"])
+        if name in locked:
+            missing = locked[name] - options.keys()
+            if missing:
+                raise ValueError(f"published crew no longer eligible for {name}: {', '.join(sorted(missing))}")
+            for choice in options.values():
+                model.add(choice == 1)
     coverage = sum(choice for options in candidates.values() for choice in options.values())
     cost = sum(penalties)
     solver = cp_model.CpSolver()
     solver.parameters.num_workers = 1
     model.maximize(coverage)
-    require_optimal(solver, model)
+    require_optimal(solver, model, locked=bool(locked))
     filled = solver.value(coverage)
     model.add(coverage == filled)
     if previous is not None:
@@ -127,6 +171,10 @@ def solve(plan, absent=(), baseline=None):
         rows[name] = {"assigned": assigned, "vacant": shifts[name]["need"] - len(assigned)}
     result = {"filled": filled, "requested": sum(s["need"] for s in shifts.values()),
               "penalty": solver.value(cost), "shifts": rows}
+    if shifts:
+        result["shift_windows"] = {name: [s["start"], s["end"]] for name, s in shifts.items()}
+    if handover_at is not None:
+        result["handover"] = {"minute": handover_at, "locked_shifts": sorted(locked)}
     if previous is not None:
         current = previous_assignments(result)
         changes_by_person = {}
@@ -139,8 +187,10 @@ def solve(plan, absent=(), baseline=None):
     return result
 
 
-def require_optimal(solver, model):
+def require_optimal(solver, model, locked=False):
     status = solver.solve(model)
+    if locked and status == cp_model.INFEASIBLE:
+        raise ValueError("already-started assignments violate the current time or work budget constraints")
     if status != cp_model.OPTIMAL:
         raise ValueError(f"optimization ended without proof: {solver.status_name(status)}")
 
@@ -150,6 +200,8 @@ def main():
     parser.add_argument("plan", type=Path)
     parser.add_argument("--absent", action="append", default=[], metavar="PERSON")
     parser.add_argument("--baseline", type=Path, help="Published roster JSON from a previous run")
+    parser.add_argument("--handover-at", type=int, metavar="MINUTE",
+                        help="Keep published teams on shifts starting before MINUTE. Absences apply to later starts.")
     args = parser.parse_args()
     try:
         plan = json.loads(args.plan.read_text(encoding="utf-8"), object_pairs_hook=unique_keys)
@@ -158,7 +210,7 @@ def main():
             baseline = json.loads(args.baseline.read_bytes(), object_pairs_hook=unique_keys)
             if baseline is None:
                 raise ValueError("baseline must contain a shifts object")
-        result = solve(plan, args.absent, baseline)
+        result = solve(plan, args.absent, baseline, args.handover_at)
     except (OSError, ValueError) as error:
         parser.exit(2, f"{error}\n")
     print(json.dumps(result, indent=2))
