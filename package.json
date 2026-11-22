@@ -13,5 +13,8 @@
     "@playwright/test": "1.65.1",
     "focus-receipt": "https://codeload.github.com/peca12968/focus-receipt/tar.gz/e339536fcfaba6cd909cd43234a3ebd723e23eb8",
     "vite": "8.3.8"
+  },
+  "dependencies": {
+    "draft-weave": "https://codeload.github.com/peca12968/draft-weave/tar.gz/d13d5828ab2ba4777f48bc95b20eee9b84bbdda3"
   }
 }

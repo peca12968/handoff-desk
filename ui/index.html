@@ -21,9 +21,22 @@
     </div>
     <section id="conflict" hidden aria-labelledby="comparison">
       <h2 id="comparison" tabindex="-1">版本對照</h2>
-      <p>請參考兩版內容，在上方編輯區整合需要保留的文字，再儲存合併結果。</p>
-      <div class="columns"><section><h3 id="base-label"></h3><pre id="base-text"></pre></section><section><h3 id="latest-label"></h3><pre id="latest-text"></pre></section></div>
-      <button id="resume">返回草稿編輯</button>
+      <div id="manual-review">
+        <p>可以回到草稿手動整合，也可以預覽三方合併，逐處選擇要保留的文字。</p>
+        <div class="columns"><section><h3 id="base-label"></h3><pre id="base-text"></pre></section><section><h3 id="latest-label"></h3><pre id="latest-text"></pre></section></div>
+        <button id="resume">返回草稿編輯</button>
+        <button id="preview">預覽三方合併</button>
+      </div>
+      <section id="review" hidden aria-labelledby="review-heading">
+        <h3 id="review-heading" tabindex="-1">合併預覽</h3>
+        <p id="review-count" aria-live="polite"></p>
+        <div id="choices"></div>
+        <section id="result" hidden aria-labelledby="result-heading">
+          <h3 id="result-heading">合併後全文</h3><pre id="result-text"></pre>
+        </section>
+        <button id="apply">套用到草稿</button>
+        <button id="discard">取消預覽</button>
+      </section>
     </section>
   </main>
   <script type="module" src="/desk.js"></script>

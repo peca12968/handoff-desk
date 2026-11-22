@@ -42,6 +42,16 @@ aside { padding: 1.25rem; border-top: .32rem solid #8ea85a; background: #e7efdf;
 #guide { margin: .6rem 0 0; }
 #retry { margin-top: .8rem; }
 #resume { margin-top: 1rem; }
+#review { margin-top: 1rem; }
+#choices fieldset { min-width: 0; margin: 0 0 1rem; padding: .75rem; border: 1px solid #bccfc3; }
+#choices legend { font-weight: 650; }
+#choices label { display: block; padding: .5rem; cursor: pointer; }
+#choices input { margin: 0 .5rem 0 0; accent-color: #215744; }
+#choices label:has(:checked) { background: #e7efdf; }
+#choices label span { display: block; white-space: pre-wrap; overflow-wrap: anywhere; padding-left: 1.5rem; }
+#result { background: #f4f6f2; padding: 1rem; margin-bottom: 1rem; }
+#discard, #resume { background: #fff; color: #215744; border: 1px solid #52766b; }
+#discard:hover, #resume:hover { background: #e7efdf; }
 #conflict { padding: 1.4rem; margin-top: 1.3rem; border-top: .32rem solid #b27639; }
 .columns { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem; }
 .columns section { padding: 1rem; background: #f4f6f2; border-radius: .35rem; }

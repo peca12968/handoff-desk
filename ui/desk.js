@@ -1,3 +1,5 @@
+import { openReview, closeReview } from "./merge-review.js";
+
 const $ = id => document.getElementById(id);
 const draft = $("draft");
 const save = $("save");
@@ -19,7 +21,7 @@ function render() {
   const bytes = encoder.encode(draft.value).length;
   const canEdit = !endpoint || Boolean(base);
   draft.disabled = busy || !canEdit;
-  save.disabled = busy || !canEdit || bytes === 0 || bytes > limit ||
+  save.disabled = busy || !$("review").hidden || !canEdit || bytes === 0 || bytes > limit ||
     (base && !latest && draft.value === base.text);
   save.textContent = latest ? "儲存合併結果" : base ? "儲存修改" : "建立紀錄";
   $("count").textContent = bytes.toLocaleString("en-US") + " / 16,384 位元組";
@@ -27,6 +29,7 @@ function render() {
   $("shared").hidden = !base;
   $("shared").href = location.href;
   $("retry").disabled = busy;
+  $("preview").disabled = busy;
   $("conflict").hidden = !latest;
   if (latest) {
     $("base-label").textContent = "編輯依據 · 第 " + base.rev + " 版";
@@ -129,6 +132,7 @@ save.addEventListener("click", async () => {
 });
 
 draft.addEventListener("input", () => {
+  if (!$("review").hidden) closeReview();
   render();
   if (encoder.encode(draft.value).length > limit) status("內容超過 16,384 位元組，請縮短文字。");
   else if (latest) status("正在編輯合併草稿");
@@ -142,6 +146,32 @@ window.addEventListener("beforeunload", event => {
 });
 $("retry").addEventListener("click", openNote);
 $("resume").addEventListener("click", () => draft.focus());
+$("preview").addEventListener("click", () => {
+  if (busy || !latest) return;
+  try {
+    openReview(base.text, draft.value, latest.text, text => {
+      base = latest;
+      latest = null;
+      draft.value = text;
+      closeReview();
+      render();
+      if (encoder.encode(text).length > limit) status("合併結果超過 16,384 位元組，請縮短文字。");
+      else if (!text.length) status("合併結果為空白，請輸入交班內容。");
+      else status(text === base.text ? "與已儲存版本相同" : "合併結果已放入草稿");
+      showSharedGuide();
+      draft.focus();
+    });
+    render();
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    status("兩版差異過大，請依版本對照手動整合。");
+  }
+});
+$("discard").addEventListener("click", () => {
+  closeReview();
+  render();
+  $("preview").focus();
+});
 if (noteId === null) {
   status("等待建立");
   render();
