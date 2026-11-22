@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
 using Microsoft.Net.Http.Headers;
 
@@ -36,6 +37,13 @@ app.MapPut("/notes/{id:guid}", async (Guid id, HttpContext ctx) =>
 {
     var conditions = Conditions.From(ctx.Request);
     var saved = notes.Update(id, await ReadBody(ctx.Request), conditions);
+    SetVersion(ctx.Response, saved);
+    return Results.NoContent();
+});
+app.MapPatch("/notes/{id:guid}", (Guid id, RestoreEdit edit, HttpContext ctx) =>
+{
+    if (edit.RestoreRevision < 1) throw new BadHttpRequestException("Expected a positive restoreRevision.", 400);
+    var saved = notes.Restore(id, edit.RestoreRevision, Conditions.From(ctx.Request));
     SetVersion(ctx.Response, saved);
     return Results.NoContent();
 });
@@ -78,3 +86,6 @@ static async Task<byte[]> ReadBody(HttpRequest req)
     catch (DecoderFallbackException) { throw new BadHttpRequestException("Invalid UTF-8.", 400); }
     return bytes;
 }
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+sealed record RestoreEdit([property: JsonNumberHandling(JsonNumberHandling.Strict)] long RestoreRevision);

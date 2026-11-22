@@ -80,12 +80,19 @@ sealed class NoteStore(string path)
     }
 
     public Revision Update(Guid id, byte[] body, Conditions conditions)
+        => Edit(id, conditions, (_, _) => body);
+
+    public Revision Restore(Guid id, long sourceVersion, Conditions conditions)
+        => Edit(id, conditions, (db, tx) => Read(db, tx, id, sourceVersion).Body);
+
+    private Revision Edit(Guid id, Conditions conditions, Func<SqliteConnection, SqliteTransaction, byte[]> selectBody)
     {
         using var db = Open();
         // Obtain the SQLite writer lock before reading the version for comparison.
         using var tx = db.BeginTransaction(deferred: false);
         var current = Read(db, tx, id, null);
         conditions.Check(current.Tag, writing: true);
+        var body = selectBody(db, tx);
         if (!body.AsSpan().SequenceEqual(current.Body))
         {
             current = Revision.New(id, current.Number + 1, body);

@@ -83,6 +83,31 @@ class NoteTests(unittest.TestCase):
         self.assertEqual(request(self.base, "PUT", note, b"x", {"If-Match": tag, "If-None-Match": "*"})[0], 412)
         self.assertEqual(request(self.base, "PUT", note, b"x", {"If-Match": '"other,tag", ' + tag})[0], 204)
 
+    def test_conditional_restore_creates_new_version_and_preserves_history(self):
+        original = "\ufeff交班\r\n".encode()
+        note, first = self.create(original)
+        _, fields, _ = request(self.base, "PUT", note, b"amended", {"If-Match": first})
+        second = fields["ETag"]
+        def restore(tag, body=b'{"restoreRevision":1}'):
+            headers = {"Content-Type": "application/json"}
+            if tag: headers["If-Match"] = tag
+            return request(self.base, "PATCH", note, body, headers)
+        self.assertEqual(restore(None)[0], 428)
+        self.assertEqual(restore(first)[0], 412)
+        self.assertEqual(restore(second, b'{"restoreRevision":8}')[0], 404)
+        for body in [b'{}', b'{"restoreRevision":0}', b'{"restoreRevision":"1"}', b'{"restoreRevision":1,"x":0}']:
+            self.assertEqual(restore(second, body)[0], 400)
+        code, fields, _ = restore(second)
+        third = fields["ETag"]
+        self.assertEqual((code, fields["Handoff-Revision"]), (204, "3"))
+        self.assertNotIn(third, (first, second))
+        self.assertEqual(restore(third)[1]["ETag"], third)
+        self.assertEqual(restore(second)[0], 412)
+        for n, tag, body in [(1, first, original), (2, second, b"amended"), (3, third, original)]:
+            status, headers, data = request(self.base, "GET", f"{note}/revisions/{n}")
+            self.assertEqual((status, headers["ETag"], data), (200, tag, body))
+        self.assertEqual(request(self.base, "GET", note + "/revisions/4")[0], 404)
+
     def test_missing_wildcard_malformed_and_other_notes_token(self):
         note, tag = self.create()
         _, other = self.create()
@@ -92,6 +117,25 @@ class NoteTests(unittest.TestCase):
                 self.assertEqual(status, expected)
                 self.assertEqual(fields["Cache-Control"], "no-store")
         self.assertEqual(request(self.base, "GET", note)[1]["ETag"], tag)
+
+    def test_restore_races_with_new_edit_on_separate_process(self):
+        note, first = self.create(b"old")
+        _, fields, _ = request(self.base, "PUT", note, b"current", {"If-Match": first})
+        cond = {"If-Match": fields["ETag"]}
+        gate = Barrier(2)
+        with server(self.directory) as other:
+            def send(base, method, body, headers):
+                gate.wait(timeout=10)
+                return request(base, method, note, body, headers)[0]
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                restored = pool.submit(send, self.base, "PATCH", b'{"restoreRevision":1}',
+                                       {**cond, "Content-Type": "application/json"})
+                edited = pool.submit(send, other, "PUT", b"new edit", cond)
+                statuses = [restored.result(), edited.result()]
+        self.assertCountEqual(statuses, [204, 412])
+        _, latest, body = request(self.base, "GET", note)
+        self.assertEqual((latest["Handoff-Revision"], body), ("3", b"old" if statuses[0] == 204 else b"new edit"))
+        self.assertEqual(request(self.base, "GET", note + "/revisions/2")[2], b"current")
 
     def test_body_round_trip_and_noop_keeps_revision(self):
         body = "\ufeff中文 café\r\n末行\n".encode()

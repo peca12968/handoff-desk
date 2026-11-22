@@ -27,6 +27,9 @@ dotnet src/bin/Release/net10.0/HandoffNotes.dll --urls http://127.0.0.1:5080
 - `GET /notes/{id}` 回傳原始位元組、強 ETag 與 `Handoff-Revision`。帶入相符的 `If-None-Match` 會得到 304，適合在編輯前重新確認內容。
 - `PUT /notes/{id}` 需要明確的 `If-Match` 版本標籤。缺少條件或僅給萬用字元會得到 428。舊標籤或僅有弱標籤會得到 412。資料與版本皆相同的儲存回傳 204，沿用原版號。
 - `GET /notes/{id}/revisions/{version}` 可讀取歷史內容。示範用戶端根據已知的兩段獨立增補來合併。一般編輯器可顯示原稿、自己的修改與最新版本，交由使用者決定。
+- `PATCH /notes/{id}` 接受 `application/json` 及正整數欄位 `restoreRevision`。帶上目前版本的 `If-Match` 即可從指定歷史版本還原原始 UTF-8 位元組。原稿與目前內容不同時會新增一版。內容已相同時，沿用目前版號及標籤。
+
+例如在第 2 版發現出貨提醒有誤，可以帶上第 2 版 ETag 送出 `{"restoreRevision":1}`。成功會收到 204、第 3 版及全新的 ETag，第 2 版仍可查閱。若另一位同事已存檔而使標籤過期，還原會收到 412。在兩個服務程序的演練中，還原與新編輯同時使用第 2 版標籤，只有一筆能產生第 3 版。[還原與並行驗證](test_api.py)
 
 ETag 是不透明字串，客戶端應原樣保留引號。讀取的快取驗證採弱比較，修改的先決條件採強比較。[HTTP 條件式請求](https://www.rfc-editor.org/rfc/rfc9110.html#section-13) · [HTTP 428](https://www.rfc-editor.org/rfc/rfc6585.html#section-3)
 
