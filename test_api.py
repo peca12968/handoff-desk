@@ -82,6 +82,79 @@ class AvailabilityTests(unittest.TestCase):
         self.assertEqual(first[0]["start"], "2024-11-04T21:00:00+08:00")
         self.assertEqual(first[1]["start"], "2024-11-04T08:00:00-05:00")
 
+    def test_handoff_requires_the_same_support_person_for_all_45_minutes(self):
+        query = json.loads((ROOT / "examples/support-handoff.json").read_text(encoding="utf-8"))
+        report = self.post(query)
+        self.assertEqual([iso(s["start"])[-5:] for s in report["slots"]], ["13:30", "13:45", "14:00", "14:15"])
+        for slot in report["slots"]:
+            self.assertEqual([p["id"] for p in slot["local"]], ["design", "engineering", "support-west"])
+        query["limit"] = 1
+        self.assertEqual(self.post(query), {"totalSlots": 4, "slots": report["slots"][:1]})
+        del query["attendance"]
+        self.assertEqual(self.post(query), {"totalSlots": 0, "slots": []})
+
+    def test_required_and_optional_at_the_32_person_limit(self):
+        query = scenario("2024-11-04T12:00Z", "2024-11-04T12:30Z", "UTC", [1], "12:00", "13:00")
+        base = query["participants"][0]
+        query["participants"] = [base | {"id": str(i)} for i in range(32)]
+        self.assertEqual(len(self.post(query)["slots"][0]["local"]), 32)
+        query["participants"][31]["working"] = []
+        self.assertEqual(self.post(query)["totalSlots"], 0)
+        query["attendance"] = {"optionalIds": ["0", "31"], "minimumOptional": 1}
+        self.assertEqual([p["id"] for p in self.post(query)["slots"][0]["local"]], [str(i) for i in range(31)])
+        query["attendance"] = {"optionalIds": [str(i) for i in range(32)], "minimumOptional": 32}
+        self.assertEqual(self.post(query)["totalSlots"], 0)
+        query["attendance"]["minimumOptional"] = 31
+        self.assertEqual(self.post(query)["totalSlots"], 1)
+
+    def test_optional_coverage_in_repeated_hour_uses_actual_instants(self):
+        query = scenario("2024-11-03T05:00Z", "2024-11-03T07:00Z", "America/New_York", [7], "01:00", "02:00", 60, 30)
+        base = query["participants"][0]
+        query["participants"] = [base | {"id": "early", "busy": [{"start": "2024-11-03T06:00Z", "end": "2024-11-03T07:00Z"}]},
+                                 base | {"id": "late", "busy": [{"start": "2024-11-03T05:00Z", "end": "2024-11-03T06:00Z"}]}]
+        query["attendance"] = {"optionalIds": ["early", "late"], "minimumOptional": 1}
+        slots = self.post(query)["slots"]
+        self.assertEqual([[p["id"] for p in s["local"]] for s in slots], [["early"], ["late"]])
+        self.assertEqual([s["local"][0]["start"] for s in slots],
+                         ["2024-11-03T01:00:00-04:00", "2024-11-03T01:00:00-05:00"])
+
+    def test_invalid_quorum_policies_return_400(self):
+        query = scenario("2024-11-04T12:00Z", "2024-11-04T13:00Z", "UTC", [1], "00:00", "24:00")
+        for ids, minimum in [(["absent"], 1), (["p", "p"], 1), (["p"], 2), (["p"], -1),
+                             (["p"], 0), ([None], 1), ([], None), (None, 0)]:
+            with self.subTest(ids=ids, minimum=minimum):
+                policy = {"optionalIds": ids, "minimumOptional": minimum}
+                self.assertIn("error", self.post(query | {"attendance": policy}, 400))
+
+    def test_quorum_matches_interval_oracle_on_64_schedules(self):
+        origin = datetime(2024, 11, 4, 10, tzinfo=timezone.utc)
+        def stamp(minute):
+            return (origin + timedelta(minutes=minute)).isoformat(timespec="minutes")
+
+        for seed in range(64):
+            rng = random.Random(seed)
+            duration, step = rng.randint(5, 36), rng.randint(3, 13)
+            query = scenario(stamp(0), stamp(100), "UTC", [1], "00:00", "24:00", duration, step)
+            base = query["participants"].pop()
+            blocks = {}
+            for name in ["host", "a", "b", "c"]:
+                blocks[name] = [(t, t + rng.randint(2, 15)) for t in rng.sample(range(90), rng.randint(0, 4))]
+                query["participants"].append(base | {"id": name, "busy": [
+                    {"start": stamp(a), "end": stamp(b)} for a, b in blocks[name]]})
+            minimum = seed % 4
+            query["attendance"] = {"optionalIds": ["c", "a", "b"], "minimumOptional": minimum}
+            query["limit"] = 3
+            expected = []
+            for t in range(0, 101 - duration, step):
+                present = [name for name, intervals in blocks.items()
+                           if all(t + duration <= a or b <= t for a, b in intervals)]
+                if "host" in present and len(present) - 1 >= minimum:
+                    expected.append((iso(stamp(t)), present))
+            result = self.post(query)
+            with self.subTest(seed=seed):
+                actual = [(iso(s["start"]), [p["id"] for p in s["local"]]) for s in result["slots"]]
+                self.assertEqual((result["totalSlots"], actual), (len(expected), expected[:3]))
+
     def test_spring_gap_uses_elapsed_duration(self):
         query = scenario("2024-03-10T05:00Z", "2024-03-10T09:00Z", "America/New_York",
                          [7], "01:30", "03:30", 60, 15)

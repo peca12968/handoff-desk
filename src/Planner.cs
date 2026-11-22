@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Numerics;
 
 namespace OverlapHours;
 
 public sealed record SearchRequest(string? Start, string? End, int DurationMinutes, int StepMinutes,
-                                   PersonInput?[]? Participants, int? Limit = null);
+                                   PersonInput?[]? Participants, int? Limit = null, AttendancePolicy? Attendance = null);
+public sealed record AttendancePolicy(string?[]? OptionalIds, int? MinimumOptional);
 public sealed record PersonInput(string? Id, string? Zone, Shift?[]? Working, Busy?[]? Busy,
                                  DateOverride?[]? Overrides = null);
 public sealed record Shift(int[]? Days, string? Start, string? End);
@@ -121,38 +123,61 @@ public static class Planner
         if (people.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != people.Length)
             throw new ArgumentException("Participant IDs must be unique");
 
-        var free = new bool[minutes];
-        Array.Fill(free, true);
-        foreach (var person in people)
+        var required = people.Length == 32 ? uint.MaxValue : (1u << people.Length) - 1;
+        var minimumOptional = 0;
+        if (request.Attendance is { } policy)
         {
+            if (policy.OptionalIds is not { Length: <= 32 } optional ||
+                policy.MinimumOptional is not int minimum || minimum < 0 || minimum > optional.Length)
+                throw new ArgumentException("Supply optionalIds and a minimumOptional between zero and the list size");
+            foreach (var id in optional)
+            {
+                int index = Array.FindIndex(people, p => p.Id == id);
+                if (index < 0 || (required & (1u << index)) == 0)
+                    throw new ArgumentException("Optional IDs must be known and unique");
+                required &= ~(1u << index);
+            }
+            if (required == 0 && minimum == 0)
+                throw new ArgumentException("At least one attendee must be required by the policy");
+            minimumOptional = minimum;
+        }
+
+        // Each bit represents one person available for the entire candidate.
+        int duration = request.DurationMinutes, step = request.StepMinutes;
+        int candidates = minutes < duration ? 0 : (minutes - duration) / step + 1;
+        var attendance = new uint[candidates];
+        for (int index = 0; index < people.Length; index++)
+        {
+            var person = people[index];
             var busyCount = 0;
+            var run = 0;
             for (var i = 0; i < minutes; i++)
             {
                 busyCount += person.BusyChanges[i];
-                if (!free[i]) continue;
                 var local = TimeZoneInfo.ConvertTime(start.AddMinutes(i), person.Zone);
                 var weekday = ((int)local.DayOfWeek + 6) % 7;
                 var minute = local.Hour * 60 + local.Minute;
                 var working = person.Overrides.TryGetValue(DateOnly.FromDateTime(local.DateTime), out var specialDay)
                     ? specialDay[minute] : person.Week[weekday * Day + minute];
-                free[i] = busyCount == 0 && working;
+                run = busyCount == 0 && working ? run + 1 : 0;
+                int offset = i + 1 - duration;
+                if (run >= duration && offset % step == 0) attendance[offset / step] |= 1u << index;
             }
         }
 
         var slots = new List<Slot>();
         var total = 0;
-        var run = 0;
-        for (var i = 0; i < minutes; i++)
+        for (var candidate = 0; candidate < candidates; candidate++)
         {
-            run = free[i] ? run + 1 : 0;
-            if (run < request.DurationMinutes) continue;
-            var offset = i + 1 - request.DurationMinutes;
-            if (offset % request.StepMinutes != 0) continue;
+            var eligible = attendance[candidate];
+            if ((eligible & required) != required || BitOperations.PopCount(eligible & ~required) < minimumOptional)
+                continue;
             total++;
             if (slots.Count == limit) continue;
-            var from = start.AddMinutes(offset);
-            var until = from.AddMinutes(request.DurationMinutes);
-            var locals = people.Select(p => new LocalSlot(p.Id, p.Zone.Id,
+            var from = start.AddMinutes(candidate * step);
+            var until = from.AddMinutes(duration);
+            var locals = people.Where((_, index) => (eligible & (1u << index)) != 0)
+                .Select(p => new LocalSlot(p.Id, p.Zone.Id,
                 TimeZoneInfo.ConvertTime(from, p.Zone), TimeZoneInfo.ConvertTime(until, p.Zone))).ToArray();
             slots.Add(new Slot(from, until, locals));
         }
