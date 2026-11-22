@@ -1,0 +1,32 @@
+name: Verify calendar interoperability
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  calendar:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: peca12968/overlap-hours
+          ref: 461fa101230d3b4c6f2a2043cdf10d86b94da780
+          path: upstream
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build upstream/src -c Release
+      - run: npm ci
+      - run: npm test
+        env:
+          OVERLAP_DIR: upstream
