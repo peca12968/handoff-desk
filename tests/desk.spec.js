@@ -1,0 +1,95 @@
+import { expect, test } from "@playwright/test";
+
+const editor = page => page.getByRole("textbox", { name: "交班內容" });
+const action = (page, name) => page.getByRole("button", { name, exact: true });
+
+async function create(page, text) {
+  await page.goto("/");
+  await editor(page).fill(text);
+  await action(page, "建立紀錄").click();
+  await expect(page.getByRole("status")).toHaveText("已儲存第 1 版");
+}
+
+test("two editors resolve a stale draft, including another update during review", async ({ page, context, request }, testInfo) => {
+  const original = "冷藏庫溫度已記錄。";
+  const morning = original + "\n早班：已換感測器。";
+  const night = original + "\n晚班：待複查。";
+  await create(page, original);
+  const opened = context.waitForEvent("page");
+  await page.getByRole("link", { name: "在新分頁開啟" }).click();
+  const peer = await opened;
+  await expect(editor(peer)).toHaveValue(original);
+
+  await editor(page).fill(morning);
+  await action(page, "儲存修改").click();
+  await expect(page.getByRole("status")).toHaveText("已儲存第 2 版");
+  await editor(peer).fill(night);
+  await action(peer, "儲存修改").click();
+  await expect(peer.getByText("伺服器最新 · 第 2 版")).toBeVisible();
+  await expect(peer.locator("#base-text")).toHaveText(original);
+  await expect(peer.locator("#latest-text")).toHaveText(morning);
+  await expect(editor(peer)).toHaveValue(night);
+  await peer.screenshot({ path: testInfo.outputPath("review.png"), fullPage: true });
+
+  const firstMerge = morning + "\n晚班：待複查。";
+  const morningUpdate = morning + "\n早班：備品在二樓。";
+  await editor(peer).fill(firstMerge);
+  await editor(page).fill(morningUpdate);
+  await action(page, "儲存修改").click();
+  await expect(page.getByRole("status")).toHaveText("已儲存第 3 版");
+  await action(peer, "儲存合併結果").click();
+  await expect(peer.getByText("伺服器最新 · 第 3 版")).toBeVisible();
+  await expect(peer.locator("#base-text")).toHaveText(morning);
+  await expect(peer.locator("#latest-text")).toHaveText(morningUpdate);
+  await expect(editor(peer)).toHaveValue(firstMerge);
+
+  const merged = morningUpdate + "\n晚班：待複查。";
+  await editor(peer).fill(merged);
+  await action(peer, "儲存合併結果").click();
+  await expect(peer.getByRole("status")).toHaveText("已儲存第 4 版");
+  await expect(peer.locator("#conflict")).toBeHidden();
+  await page.reload();
+  await expect(editor(page)).toHaveValue(merged);
+  const id = new URL(page.url()).searchParams.get("note");
+  for (const [i, expected] of [original, morning, morningUpdate, merged].entries()) {
+    const response = await request.get("/api/notes/" + id + "/revisions/" + (i + 1));
+    expect(response.status()).toBe(200);
+    expect(await response.text()).toBe(expected);
+  }
+});
+
+test("UTF-8 byte limit and controls fit a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto("/");
+  const button = action(page, "建立紀錄");
+  await expect(button).toBeDisabled();
+  await editor(page).fill("交".repeat(5461) + "AB");
+  await expect(button).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText("超過");
+  await editor(page).fill("交".repeat(5461) + "A");
+  await expect(button).toBeEnabled();
+  await button.click();
+  await expect(page.getByRole("status")).toHaveText("已儲存第 1 版");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
+});
+
+test("keeps input when a save cannot reach the API", async ({ page }) => {
+  await create(page, "原稿");
+  await page.route("**/api/notes/*", route => route.abort());
+  await editor(page).fill("未傳出的草稿");
+  await action(page, "儲存修改").click();
+  await expect(page.getByRole("status")).toContainText("重試");
+  await expect(editor(page)).toHaveValue("未傳出的草稿");
+  await page.unroute("**/api/notes/*");
+  await action(page, "儲存修改").click();
+  await expect(page.getByRole("status")).toHaveText("已儲存第 2 版");
+});
+
+test("missing and malformed links cannot create or overwrite a note", async ({ page }) => {
+  await page.goto("/?note=00000000-0000-0000-0000-000000000000");
+  await expect(page.getByRole("status")).toContainText("找不到");
+  await expect(editor(page)).toBeDisabled();
+  await page.goto("/?note=oops");
+  await expect(page.getByRole("status")).toHaveText("紀錄網址格式有誤");
+  await expect(editor(page)).toBeDisabled();
+});

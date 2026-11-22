@@ -1,0 +1,30 @@
+name: Verify the handoff editor
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: peca12968/handoff-notes-api
+          ref: 033d91434d169d557d438ddd11c0a87fc5f7c4e5
+          path: upstream
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore upstream/src --locked-mode
+      - run: dotnet build upstream/src -c Release --no-restore
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+        env:
+          HANDOFF_API_DIR: upstream
