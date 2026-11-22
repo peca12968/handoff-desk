@@ -4,13 +4,17 @@ namespace OverlapHours;
 
 public sealed record SearchRequest(string? Start, string? End, int DurationMinutes, int StepMinutes,
                                    PersonInput?[]? Participants, int? Limit = null);
-public sealed record PersonInput(string? Id, string? Zone, Shift?[]? Working, Busy?[]? Busy);
+public sealed record PersonInput(string? Id, string? Zone, Shift?[]? Working, Busy?[]? Busy,
+                                 DateOverride?[]? Overrides = null);
 public sealed record Shift(int[]? Days, string? Start, string? End);
+public sealed record DateOverride(string? Date, WallRange?[]? Working);
+public sealed record WallRange(string? Start, string? End);
 public sealed record Busy(string? Start, string? End);
 public sealed record LocalSlot(string Id, string Zone, DateTimeOffset Start, DateTimeOffset End);
 public sealed record Slot(DateTimeOffset Start, DateTimeOffset End, LocalSlot[] Local);
 public sealed record SearchResult(int TotalSlots, Slot[] Slots);
-internal sealed record Person(string Id, TimeZoneInfo Zone, bool[] Week, int[] BusyChanges);
+internal sealed record Person(string Id, TimeZoneInfo Zone, bool[] Week,
+                              Dictionary<DateOnly, bool[]> Overrides, int[] BusyChanges);
 
 public static class Planner
 {
@@ -32,6 +36,33 @@ public static class Planner
         if (!TimeOnly.TryParseExact(text, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
             throw new ArgumentException("Working times require HH:mm; 24:00 is allowed as an end");
         return time.Hour * 60 + time.Minute;
+    }
+
+    private static Dictionary<DateOnly, bool[]> CompileOverrides(DateOverride?[]? entries)
+    {
+        var result = new Dictionary<DateOnly, bool[]>();
+        if (entries is null) return result;
+        if (entries.Length > 366) throw new ArgumentException("Supply up to 366 date overrides per person");
+        foreach (var entry in entries)
+        {
+            if (entry is null || !DateOnly.TryParseExact(entry.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                                                         DateTimeStyles.None, out var date))
+                throw new ArgumentException("Each override requires a valid local date in yyyy-MM-dd format");
+            if (entry.Working is not { Length: <= 50 } ranges)
+                throw new ArgumentException("Each override requires a working array of up to 50 ranges");
+
+            var day = new bool[Day];
+            if (!result.TryAdd(date, day)) throw new ArgumentException($"Duplicate override date: {entry.Date}");
+            foreach (var range in ranges)
+            {
+                var from = WallMinute(range?.Start, false);
+                var until = WallMinute(range?.End, true);
+                if (until <= from)
+                    throw new ArgumentException("Override ranges must fit within one local date; split at midnight");
+                Array.Fill(day, true, from, until - from);
+            }
+        }
+        return result;
     }
 
     private static Person Prepare(PersonInput? input, DateTimeOffset start, int minutes)
@@ -70,7 +101,7 @@ public static class Planner
             changes[first]++;
             changes[last]--;
         }
-        return new Person(input.Id, zone, week, changes);
+        return new Person(input.Id, zone, week, CompileOverrides(input.Overrides), changes);
     }
 
     public static SearchResult Search(SearchRequest request)
@@ -101,7 +132,10 @@ public static class Planner
                 if (!free[i]) continue;
                 var local = TimeZoneInfo.ConvertTime(start.AddMinutes(i), person.Zone);
                 var weekday = ((int)local.DayOfWeek + 6) % 7;
-                free[i] = busyCount == 0 && person.Week[weekday * Day + local.Hour * 60 + local.Minute];
+                var minute = local.Hour * 60 + local.Minute;
+                var working = person.Overrides.TryGetValue(DateOnly.FromDateTime(local.DateTime), out var specialDay)
+                    ? specialDay[minute] : person.Week[weekday * Day + minute];
+                free[i] = busyCount == 0 && working;
             }
         }
 

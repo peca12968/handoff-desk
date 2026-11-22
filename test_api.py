@@ -141,6 +141,53 @@ class AvailabilityTests(unittest.TestCase):
         invalid["participants"][0]["working"][0]["days"] = [8]
         self.assertIn("error", self.post(invalid, 400))
 
+    def test_date_override_replaces_weekly_hours_and_empty_day_closes(self):
+        query = json.loads((ROOT / "examples/special-hours.json").read_text(encoding="utf-8"))
+        report = self.post(query)
+        self.assertEqual(report["totalSlots"], 1)
+        self.assertEqual(iso(report["slots"][0]["start"]), "2024-11-04 14:00")
+        query["participants"][0]["overrides"][0]["working"] = []
+        self.assertEqual(self.post(query), {"totalSlots": 0, "slots": []})
+
+    def test_local_holiday_cuts_overnight_carry_at_midnight_before_utc_date_changes(self):
+        query = scenario("2024-11-03T15:00Z", "2024-11-03T17:00Z", "Asia/Taipei", [7], "23:00", "01:00")
+        query["participants"][0]["overrides"] = [{"date": "2024-11-04", "working": []}]
+        result = self.post(query)
+        self.assertEqual([iso(s["start"]) for s in result["slots"]], ["2024-11-03 15:00", "2024-11-03 15:30"])
+
+    def test_one_off_open_hours_apply_to_both_repeated_hours_but_absolute_busy_still_wins(self):
+        query = scenario("2024-11-03T04:00Z", "2024-11-03T08:00Z", "America/New_York", [1], "09:00", "10:00")
+        person = query["participants"][0]
+        person["overrides"] = [{"date": "2024-11-03", "working": [{"start": "01:00", "end": "01:30"}]}]
+        slots = self.post(query)["slots"]
+        self.assertEqual([s["local"][0]["start"] for s in slots],
+                         ["2024-11-03T01:00:00-04:00", "2024-11-03T01:00:00-05:00"])
+        person["busy"] = [{"start": "2024-11-03T01:00-04:00", "end": "2024-11-03T01:30-04:00"}]
+        self.assertEqual(self.post(query)["slots"], slots[1:])
+
+    def test_override_ranges_merge_and_the_weekly_schedule_resumes_next_day(self):
+        query = scenario("2024-11-04T22:30Z", "2024-11-05T00:30Z", "UTC", [2], "00:00", "00:30",
+                         duration=60, step=30)
+        query["participants"][0]["overrides"] = [{"date": "2024-11-04", "working": [
+            {"start": "23:30", "end": "24:00"}, {"start": "23:00", "end": "23:45"}]}]
+        self.assertEqual([iso(s["start"]) for s in self.post(query)["slots"]],
+                         ["2024-11-04 23:00", "2024-11-04 23:30"])
+
+    def test_one_off_hours_inside_a_spring_clock_gap_create_no_slot(self):
+        query = scenario("2024-03-10T05:00Z", "2024-03-10T09:00Z", "America/New_York", [7], "00:00", "24:00")
+        query["participants"][0]["overrides"] = [{"date": "2024-03-10", "working": [
+            {"start": "02:00", "end": "03:00"}]}]
+        self.assertEqual(self.post(query), {"totalSlots": 0, "slots": []})
+
+    def test_ambiguous_or_invalid_overrides_return_400(self):
+        query = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+        closed = {"date": "2024-11-04", "working": []}
+        for overrides in [[closed, closed], [closed | {"date": "2024-02-30"}], [{"date": "2024-11-04"}],
+                          [closed | {"working": [{"start": "23:00", "end": "01:00"}]}], [None]]:
+            with self.subTest(overrides=overrides):
+                query["participants"][0]["overrides"] = overrides
+                self.assertIn("error", self.post(query, 400))
+
     def test_output_agrees_with_interval_intersection_for_twelve_fixed_schedules(self):
         start = datetime(2024, 11, 4, 9, tzinfo=timezone.utc)
         def stamp(minute):
