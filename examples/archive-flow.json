@@ -1,0 +1,16 @@
+{
+  "page": "inbox.html",
+  "steps": [
+    {"key": "Tab", "role": "button", "name": "封存 盤點清單"},
+    {"key": "Enter", "role": "button", "name": "取消"},
+    {"key": "Shift+Tab", "role": "button", "name": "確認封存"},
+    {"key": "Tab", "role": "button", "name": "取消"},
+    {"key": "Escape", "role": "button", "name": "封存 盤點清單"},
+    {"key": "Enter", "role": "button", "name": "取消"},
+    {"key": "Tab", "role": "button", "name": "確認封存"},
+    {"key": "Enter", "role": "button", "name": "封存 到貨紀錄"},
+    {"key": "Enter", "role": "button", "name": "取消"},
+    {"key": "Tab", "role": "button", "name": "確認封存"},
+    {"key": "Enter", "role": "heading", "name": "待封存文件"}
+  ]
+}
