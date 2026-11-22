@@ -5,6 +5,9 @@ permissions:
 jobs:
   browser:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        engine: [chromium, firefox]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/checkout@v7
@@ -13,7 +16,7 @@ jobs:
           ref: 033d91434d169d557d438ddd11c0a87fc5f7c4e5
           path: upstream
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -24,7 +27,7 @@ jobs:
       - run: dotnet build upstream/src -c Release --no-restore
       - run: npm ci
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
+      - run: npx playwright install --with-deps ${{ matrix.engine }}
+      - run: npm test -- --project=${{ matrix.engine }}
         env:
           HANDOFF_API_DIR: upstream

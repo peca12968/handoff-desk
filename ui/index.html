@@ -20,9 +20,10 @@
       <aside aria-labelledby="state-heading"><h2 id="state-heading">紀錄狀態</h2><p id="status" role="status" aria-live="polite">準備中…</p><p id="guide">首次儲存後，可在新分頁開啟同一份紀錄。</p><button id="retry" hidden>重新讀取</button></aside>
     </div>
     <section id="conflict" hidden aria-labelledby="comparison">
-      <h2 id="comparison">版本對照</h2>
+      <h2 id="comparison" tabindex="-1">版本對照</h2>
       <p>請參考兩版內容，在上方編輯區整合需要保留的文字，再儲存合併結果。</p>
       <div class="columns"><section><h3 id="base-label"></h3><pre id="base-text"></pre></section><section><h3 id="latest-label"></h3><pre id="latest-text"></pre></section></div>
+      <button id="resume">返回草稿編輯</button>
     </section>
   </main>
   <script type="module" src="/desk.js"></script>

@@ -38,17 +38,23 @@ npm run dev
 
 此示範透過綁定本機的 Vite 代理連線至 SQLite API，信任同一台電腦上的使用者。草稿保存在目前分頁，成功儲存後才會寫入資料庫。關閉含修改的分頁時，編輯器會向瀏覽器申請離開提示。
 
+## 用鍵盤完成一次衝突合併
+
+在較早開啟的分頁修改草稿，以 Tab 移到「儲存修改」並按 Enter。若另一班已寫入新版，焦點會落在「版本對照」標題。閱讀兩版內容後，按 Tab 到「返回草稿編輯」，再按 Enter 即可繼續編輯。合併成功時焦點回到編輯區。若送出時斷線，焦點回到儲存按鈕，恢復連線後可直接按 Enter 重試。
+
+測試先讓早班存入第 2 版，再以晚班的舊草稿觸發 HTTP 412。它使用作品集內的 Focus Receipt 比對八次按鍵後的焦點，最後從 SQLite 歷史 API 讀回第 3 版，核對兩班文字都已保存。另一個測試延後伺服器回應，確認等待期間已移到其他連結的焦點會留在原處。[鍵盤整合測試](tests/desk.spec.js) · [Focus Receipt 固定版本](https://github.com/peca12968/focus-receipt/tree/e339536fcfaba6cd909cd43234a3ebd723e23eb8)
+
 ## 自動化驗證
 
 保留已建置的 API，先結束上述兩個示範服務，再在前端目錄執行以下指令。Playwright 會啟動獨立 API 與前端預覽，每次執行使用新的本機測試資料庫。
 
 ```sh
 npm run build
-npx playwright install chromium
+npx playwright install chromium firefox
 npm test
 ```
 
-四個瀏覽器測試涵蓋連續兩次編輯衝突、360 像素寬度與 UTF-8 大小邊界、斷線重試及錯誤連結。衝突測試先後由兩頁寫入，最後從歷史 API 驗證全部四版原文。GitHub Actions 在 Ubuntu 使用固定提交的後端重跑相同測試。[測試](tests/desk.spec.js) · [CI](.github/workflows/ci.yml)
+七個案例分別在 Chromium 與 Firefox 執行，涵蓋鍵盤合併、連續兩次編輯衝突、360 像素寬度與 UTF-8 大小邊界、斷線儲存與重新讀取、等待期間的焦點及錯誤連結。連續衝突測試先後由兩頁寫入，最後從歷史 API 驗證全部四版原文。GitHub Actions 在 Ubuntu 使用固定提交的後端重跑相同測試。[測試](tests/desk.spec.js) · [CI](.github/workflows/ci.yml)
 
 **履歷用語**　以 JavaScript、HTTP ETag 與 Playwright 實作交班編輯器，保留衝突草稿並提供版本對照，透過兩個瀏覽器分頁與 SQLite 整合測試驗證連續衝突後的四版歷史。
 

@@ -10,10 +10,11 @@ mkdirSync(databaseDir, { recursive: true });
 
 export default defineConfig({
   testDir: "./tests",
-  use: {
-    baseURL: "http://127.0.0.1:4177",
-    launchOptions: { executablePath: process.env.BROWSER_PATH || undefined }
-  },
+  use: { baseURL: "http://127.0.0.1:4177" },
+  projects: [
+    { name: "chromium", use: { browserName: "chromium", launchOptions: { executablePath: process.env.BROWSER_PATH || undefined } } },
+    { name: "firefox", use: { browserName: "firefox" } }
+  ],
   webServer: [
     {
       command: 'dotnet "' + assembly + '" --urls http://127.0.0.1:5087',

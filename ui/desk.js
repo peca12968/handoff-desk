@@ -55,7 +55,15 @@ function showSharedGuide() {
   $("guide").textContent = "在新分頁開啟同一份紀錄，即可模擬另一位接班者編輯。";
 }
 
+function focusAfterRequest(origin, target) {
+  if (origin && (document.activeElement === origin || document.activeElement === document.body)) {
+    target.focus();
+  }
+}
+
 async function openNote() {
+  const retry = $("retry");
+  const origin = document.activeElement === retry ? retry : null;
   busy = true;
   render();
   try {
@@ -70,11 +78,14 @@ async function openNote() {
   } finally {
     busy = false;
     render();
+    focusAfterRequest(origin, base ? draft : retry);
   }
 }
 
 save.addEventListener("click", async () => {
   if (save.disabled) return;
+  const origin = document.activeElement === save ? save : null;
+  let target = save;
   busy = true;
   render();
   const reviewed = latest || base;
@@ -91,6 +102,7 @@ save.addEventListener("click", async () => {
       latest = newer;
       status("有更新的版本，草稿已保留");
       $("guide").textContent = "請往下查看版本對照。編輯區仍保有你剛才送出的文字。";
+      target = $("comparison");
       return;
     }
     if (!response.ok) throw new Error("儲存失敗，請稍後重試。");
@@ -106,11 +118,13 @@ save.addEventListener("click", async () => {
     latest = null;
     status("已儲存第 " + saved.rev + " 版");
     showSharedGuide();
+    target = draft;
   } catch (error) {
     status(error instanceof TypeError ? "連線中斷，請確認連線後重試。" : error.message);
   } finally {
     busy = false;
     render();
+    focusAfterRequest(origin, target);
   }
 });
 
@@ -127,6 +141,7 @@ window.addEventListener("beforeunload", event => {
   }
 });
 $("retry").addEventListener("click", openNote);
+$("resume").addEventListener("click", () => draft.focus());
 if (noteId === null) {
   status("等待建立");
   render();

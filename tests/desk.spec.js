@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { replay } from "focus-receipt/focus.mjs";
 
 const editor = page => page.getByRole("textbox", { name: "交班內容" });
 const action = (page, name) => page.getByRole("button", { name, exact: true });
@@ -10,6 +11,39 @@ async function create(page, text) {
   await expect(page.getByRole("status")).toHaveText("已儲存第 1 版");
 }
 
+test("keyboard review returns to the preserved draft and persists the merge", async ({ page, context, request }) => {
+  await create(page, "交接原稿");
+  const peer = await context.newPage();
+  await peer.goto(page.url());
+  await expect(editor(peer)).toHaveValue("交接原稿");
+  await page.bringToFront();
+  await editor(page).fill("交接原稿\n早班盤點");
+  await action(page, "儲存修改").click();
+  await expect(page.getByRole("status")).toHaveText("已儲存第 2 版");
+
+  async function press(...checks) {
+    const steps = checks.map(([key, role, name]) => ({ key, role, name }));
+    const report = await replay(peer, steps);
+    expect(report.passed, JSON.stringify(report.checks.at(-1))).toBe(true);
+  }
+  await peer.bringToFront();
+  await press(["Tab", "link", "在新分頁開啟"], ["Tab", "textbox", "交班內容"]);
+  await peer.keyboard.press("Control+End");
+  await peer.keyboard.insertText("\n晚班複查");
+  await press(["Tab", "button", "儲存修改"], ["Enter", "heading", "版本對照"]);
+  await expect(peer.locator("#latest-text")).toHaveText("交接原稿\n早班盤點");
+  await press(["Tab", "button", "返回草稿編輯"], ["Enter", "textbox", "交班內容"]);
+  await expect(editor(peer)).toHaveValue("交接原稿\n晚班複查");
+  await peer.keyboard.press("Control+End");
+  await peer.keyboard.insertText("\n早班盤點");
+  await press(["Tab", "button", "儲存合併結果"], ["Enter", "textbox", "交班內容"]);
+  await expect(peer.getByRole("status")).toHaveText("已儲存第 3 版");
+  const id = new URL(peer.url()).searchParams.get("note");
+  const revision = await request.get("/api/notes/" + id + "/revisions/3");
+  expect(revision.status()).toBe(200);
+  expect(await revision.text()).toBe("交接原稿\n晚班複查\n早班盤點");
+});
+
 test("two editors resolve a stale draft, including another update during review", async ({ page, context, request }, testInfo) => {
   const original = "冷藏庫溫度已記錄。";
   const morning = original + "\n早班：已換感測器。";
@@ -20,9 +54,11 @@ test("two editors resolve a stale draft, including another update during review"
   const peer = await opened;
   await expect(editor(peer)).toHaveValue(original);
 
+  await page.bringToFront();
   await editor(page).fill(morning);
   await action(page, "儲存修改").click();
   await expect(page.getByRole("status")).toHaveText("已儲存第 2 版");
+  await peer.bringToFront();
   await editor(peer).fill(night);
   await action(peer, "儲存修改").click();
   await expect(peer.getByText("伺服器最新 · 第 2 版")).toBeVisible();
@@ -34,9 +70,11 @@ test("two editors resolve a stale draft, including another update during review"
   const firstMerge = morning + "\n晚班：待複查。";
   const morningUpdate = morning + "\n早班：備品在二樓。";
   await editor(peer).fill(firstMerge);
+  await page.bringToFront();
   await editor(page).fill(morningUpdate);
   await action(page, "儲存修改").click();
   await expect(page.getByRole("status")).toHaveText("已儲存第 3 版");
+  await peer.bringToFront();
   await action(peer, "儲存合併結果").click();
   await expect(peer.getByText("伺服器最新 · 第 3 版")).toBeVisible();
   await expect(peer.locator("#base-text")).toHaveText(morning);
@@ -48,6 +86,7 @@ test("two editors resolve a stale draft, including another update during review"
   await action(peer, "儲存合併結果").click();
   await expect(peer.getByRole("status")).toHaveText("已儲存第 4 版");
   await expect(peer.locator("#conflict")).toBeHidden();
+  await page.bringToFront();
   await page.reload();
   await expect(editor(page)).toHaveValue(merged);
   const id = new URL(page.url()).searchParams.get("note");
@@ -80,9 +119,49 @@ test("keeps input when a save cannot reach the API", async ({ page }) => {
   await action(page, "儲存修改").click();
   await expect(page.getByRole("status")).toContainText("重試");
   await expect(editor(page)).toHaveValue("未傳出的草稿");
+  await expect(action(page, "儲存修改")).toBeFocused();
   await page.unroute("**/api/notes/*");
-  await action(page, "儲存修改").click();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("status")).toHaveText("已儲存第 2 版");
+  await expect(editor(page)).toBeFocused();
+});
+
+test("keyboard retry recovers the editor after a failed initial read", async ({ page }) => {
+  await create(page, "冷藏庫");
+  await page.route("**/api/notes/*", route => route.abort());
+  await page.reload();
+  await expect(action(page, "重新讀取")).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(action(page, "重新讀取")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(action(page, "重新讀取")).toBeEnabled();
+  await expect(action(page, "重新讀取")).toBeFocused();
+  await page.unroute("**/api/notes/*");
+  await page.keyboard.press("Enter");
+  await expect(editor(page)).toBeFocused();
+  await expect(editor(page)).toHaveValue("冷藏庫");
+});
+
+test("a delayed save preserves focus when the user has moved elsewhere", async ({ page }) => {
+  await create(page, "原稿");
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route("**/api/notes/*", async route => {
+    await gate;
+    await route.continue();
+  });
+  await editor(page).fill("延後送出");
+  const sent = page.waitForRequest(req => req.method() === "PUT");
+  await action(page, "儲存修改").click();
+  await sent;
+  const link = page.getByRole("link", { name: "在新分頁開啟" });
+  try {
+    await link.focus();
+  } finally {
+    release();
+  }
+  await expect(page.getByRole("status")).toHaveText("已儲存第 2 版");
+  await expect(link).toBeFocused();
 });
 
 test("missing and malformed links cannot create or overwrite a note", async ({ page }) => {
