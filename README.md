@@ -25,6 +25,22 @@ python -m unittest -v
 
 Bao 缺席時，直播與字幕在第 180 分鐘同時開班，只剩 Mei 有資格支援這兩項工作。即使 Yu 願意接字幕，他仍缺少字幕技能。最多只能補到五人次。在同樣能補五人次的方案中，Mei 接直播的總成本最低。兩張班表涵蓋的人次不同，偏好成本適合用於比較相同覆蓋率的方案。[範例輸入](examples/conference.json)
 
+## 班表已公布後，有人請假
+
+把上次輸出的 JSON 存為已公布班表，重排時用 `--baseline` 讀回。工具先補足最多人次，再找出班次組合有變動的最少人數，最後在這兩項條件下選出偏好成本最低的安排。
+
+```sh
+python crew_cover.py examples/conference.json > published.json
+python crew_cover.py examples/conference.json --absent bao --baseline published.json
+```
+
+| Bao 缺席後的排法 | 補足名額 | 與已公布班表相比 | 待補名額 | 偏好成本 |
+| --- | --- | --- | --- | --- |
+| 依偏好重排 | 5／6 | Bao 退出直播，Mei 從字幕換到直播，共 2 人有異動 | 字幕 1 人 | 5 點 |
+| 依已公布班表重排 | 5／6 | 僅 Bao 退出直播，其他 3 人照原班表出勤 | 直播 1 人 | 6 點 |
+
+`changes.by_person` 逐人列出移除與新增的班別。`changes.people` 包含缺席者，同一人即使換了好幾班也只計一次。兩次排班用人員與班別識別碼比對。若上次的班別或成員已刪除，原指派會列入移除清單。若班別改期且希望讓異動清單反映這次改期，請給新時段新的班別識別碼。重排結果也能用作下次的已公布班表。
+
 ## 用自己的需求排班
 
 輸入 JSON 的 `shifts` 與 `crew` 各以唯一識別碼為鍵。
@@ -40,8 +56,10 @@ Bao 缺席時，直播與字幕在第 180 分鐘同時開班，只剩 Mei 有資
 
 ## 求解與驗證
 
-每一個符合技能與可出勤條件的配對對應一個布林變數。CP-SAT 第一階段求已補人次的最大值，第二階段固定這個值，再最小化偏好成本。兩個階段都取得最優狀態才輸出班表，讓使用者能分清「目前找到一組安排」與「確定最多能補幾個名額」。[排班實作](crew_cover.py) · [OR-Tools 排班文件](https://developers.google.com/optimization/scheduling/employee_scheduling) · [求解狀態定義](https://developers.google.com/optimization/cp/cp_solver)
+每一個符合技能與可出勤條件的配對對應一個布林變數。CP-SAT 會固定前一階段已證明的最優值，再處理下一個目標。帶入已公布班表時，同一人的所有指派差異合併成一個異動指標。每個階段都取得最優狀態後才輸出結果。[排班實作](crew_cover.py) · [OR-Tools 排班文件](https://developers.google.com/optimization/scheduling/employee_scheduling) · [求解狀態定義](https://developers.google.com/optimization/cp/cp_solver)
 
 測試產生 100 組可重現的小型班表，獨立列舉每班可選的人員組合，再逐分鐘檢查每人是否重複出勤。每一組都核對輸出班表的可行性、最大覆蓋人次與最低成本。另把單班成本調高至 20 億點，驗證仍會優先滿足六個名額。窮舉只用於小型案例的交叉驗證。[獨立驗證](test_crew.py)
+
+另有 100 組重排案例先產生已公布班表，指定一人缺席，更新工時與偏好。測試逐一窮舉新版班表，核對最大覆蓋人次、最少異動人數和最低成本，並從新舊指派獨立還原每人的異動清單。
 
 本專案使用 AI 輔助開發，展示限制式建模、最佳化與結果驗證。

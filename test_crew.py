@@ -5,6 +5,7 @@ from pathlib import Path
 import random
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 import unittest
 
 from crew_cover import solve
@@ -36,18 +37,23 @@ def evaluate(plan, assignments, absent):
     return filled, -penalty
 
 
-def exhaustive(plan, absent):
+def exhaustive(plan, absent, published=None):
     groups = []
     for shift in plan["shifts"].values():
         limit = min(len(plan["crew"]), shift["need"])
         groups.append([team for n in range(limit + 1)
                        for team in itertools.combinations(plan["crew"], n)])
-    best = (0, 0)
+    best = None
     for teams in itertools.product(*groups):
         assignments = dict(zip(plan["shifts"], teams, strict=True))
         score = evaluate(plan, assignments, absent)
         if score is not None:
-            best = max(best, score)
+            if published is not None:
+                touched = set()
+                for name in published.keys() | assignments.keys():
+                    touched.update(set(published.get(name, ())) ^ set(assignments.get(name, ())))
+                score = (score[0], -len(touched), score[1])
+            best = score if best is None else max(best, score)
     return best
 
 
@@ -65,6 +71,64 @@ def small_plan(rng):
 
 
 class CrewTest(unittest.TestCase):
+    def test_replanning_matches_exhaustive_three_level_objective(self):
+        rng = random.Random(8192)
+        for i in range(100):
+            with self.subTest(case=i):
+                plan = small_plan(rng)
+                baseline = solve(plan)
+                published = {name: row["assigned"] for name, row in baseline["shifts"].items()}
+                absent = {rng.choice(list(plan["crew"]))}
+                for worker in plan["crew"].values():
+                    worker["budget_minutes"] = rng.randrange(8)
+                    for name in worker["bids"]:
+                        worker["bids"][name] = rng.randrange(9)
+                updated = solve(plan, absent, baseline)
+                rows = {name: row["assigned"] for name, row in updated["shifts"].items()}
+                self.assertEqual(evaluate(plan, rows, absent), (updated["filled"], -updated["penalty"]))
+                changes = updated["changes"]
+                expected_changes = {}
+                for person in plan["crew"]:
+                    old = {name for name, people in published.items() if person in people}
+                    new = {name for name, people in rows.items() if person in people}
+                    if old != new:
+                        expected_changes[person] = {"added": sorted(new - old), "removed": sorted(old - new)}
+                self.assertEqual(changes, {"people": len(expected_changes), "by_person": expected_changes})
+                self.assertEqual((updated["filled"], -changes["people"], -updated["penalty"]),
+                                 exhaustive(plan, absent, published))
+
+    def test_cli_reuses_published_roster_and_keeps_remaining_crew_in_place(self):
+        cmd = [sys.executable, ROOT / "crew_cover.py", EXAMPLE]
+        with TemporaryDirectory() as directory:
+            baseline = Path(directory) / "published.json"
+            baseline.write_bytes(subprocess.check_output(cmd))
+            result = json.loads(subprocess.check_output(cmd + ["--baseline", baseline, "--absent", "bao"]))
+        self.assertEqual((result["filled"], result["penalty"]), (5, 6))
+        self.assertEqual(result["shifts"]["broadcast"]["vacant"], 1)
+        self.assertEqual(result["shifts"]["captions"]["assigned"], ["mei"])
+        self.assertEqual(result["changes"], {"people": 1, "by_person": {
+            "bao": {"removed": ["broadcast"], "added": []}}})
+
+    def test_one_person_can_absorb_multiple_changes_even_if_more_expensive(self):
+        plan = {"shifts": {s: {"start": i, "end": i + 1, "need": 1, "skill": "x"}
+                           for i, s in enumerate(["first", "second"])},
+                "crew": {p: {"skills": ["x"], "budget_minutes": 2, "bids": bids} for p, bids in
+                         [("both", {"first": 3, "second": 3}), ("one", {"first": 0}), ("two", {"second": 0})]}}
+        result = solve(plan, baseline={"shifts": {"retired": {"assigned": ["former"]}}})
+        self.assertEqual((result["filled"], result["penalty"]), (2, 6))
+        self.assertEqual(result["changes"], {"people": 2, "by_person": {
+            "former": {"removed": ["retired"], "added": []},
+            "both": {"removed": [], "added": ["first", "second"]}}})
+        repeated = solve(plan, baseline=result)
+        self.assertEqual(repeated["changes"], {"people": 0, "by_person": {}})
+
+    def test_malformed_baseline(self):
+        plan = json.loads(EXAMPLE.read_text())
+        for baseline in ({}, {"shifts": []}, {"shifts": {"x": {"assigned": ["mei", "mei"]}}},
+                         {"shifts": {"x": {"assigned": "mei"}}}):
+            with self.subTest(baseline=baseline), self.assertRaises(ValueError):
+                solve(plan, baseline=baseline)
+
     def test_random_plans_match_exhaustive_search(self):
         rng = random.Random(408)
         for i in range(100):
