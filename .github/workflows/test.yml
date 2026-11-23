@@ -20,3 +20,4 @@ jobs:
       - run: npx playwright install --with-deps ${{ matrix.browser }}
       - run: npm test
       - run: npm run demo
+      - run: node cli.mjs examples/embedded-flow.json
