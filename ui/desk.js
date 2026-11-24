@@ -1,4 +1,4 @@
-import { openReview, closeReview } from "./merge-review.js";
+import { openReview, closeReview, readReviewChoices } from "./merge-review.js";
 import { revisionHistory } from "./revision-history.js";
 
 const $ = id => document.getElementById(id);
@@ -17,6 +17,7 @@ let latest = null;
 let busy = false;
 let verified = false;
 let recovering = false;
+let reviewChoices = [];
 
 const historyPanel = revisionHistory({
   read,
@@ -55,6 +56,7 @@ function restoreDraft() {
       return;
     }
     draft.value = stored.text;
+    if (endpoint) reviewChoices = readReviewChoices(stored.review);
   } catch {
     // Storage is optional in browsers that block it or discard a session.
   }
@@ -63,7 +65,8 @@ function restoreDraft() {
 function rememberDraft() {
   const dirty = hasDraft();
   try {
-    if (dirty) sessionStorage.setItem(storageKey, JSON.stringify({ text: draft.value, base }));
+    if (dirty) sessionStorage.setItem(storageKey, JSON.stringify({ text: draft.value, base,
+      ...(reviewChoices.length ? { review: reviewChoices } : {}) }));
     else sessionStorage.removeItem(storageKey);
     $("recovery-warning").hidden = true;
   } catch {
@@ -85,6 +88,7 @@ function render() {
   $("retry").disabled = busy;
   $("preview").disabled = busy;
   $("conflict").hidden = !latest;
+  $("review-resume").hidden = !reviewChoices.length;
   historyPanel.sync(Boolean(base && verified));
   if (latest) {
     $("base-label").textContent = "編輯依據 · 第 " + base.rev + " 版";
@@ -142,6 +146,7 @@ async function openNote() {
     } else {
       base = current;
       latest = null;
+      reviewChoices = [];
       if (!retained) draft.value = current.text;
       status(retained ? "已復原草稿" : "已載入第 " + base.rev + " 版");
     }
@@ -176,6 +181,7 @@ save.addEventListener("click", async () => {
       const newer = await read();
       base = reviewed;
       latest = newer;
+      reviewChoices = [];
       rememberDraft();
       showConflict("有更新的版本，草稿已保留");
       target = $("comparison");
@@ -193,6 +199,7 @@ save.addEventListener("click", async () => {
     }
     base = saved;
     latest = null;
+    reviewChoices = [];
     verified = true;
     rememberDraft();
     if (createdId) storageKey = draftKey(createdId);
@@ -210,6 +217,7 @@ save.addEventListener("click", async () => {
 
 draft.addEventListener("input", () => {
   if (!$("review").hidden) closeReview();
+  reviewChoices = [];
   rememberDraft();
   render();
   if (encoder.encode(draft.value).length > limit) status("內容超過 16,384 位元組，請縮短文字。");
@@ -228,9 +236,13 @@ $("resume").addEventListener("click", () => draft.focus());
 $("preview").addEventListener("click", () => {
   if (busy || !latest) return;
   try {
-    openReview(base.text, draft.value, latest.text, text => {
+    openReview(base.text, draft.value, latest.text, reviewChoices, choices => {
+      reviewChoices = choices;
+      rememberDraft();
+    }, text => {
       base = latest;
       latest = null;
+      reviewChoices = [];
       draft.value = text;
       rememberDraft();
       closeReview();
@@ -244,11 +256,16 @@ $("preview").addEventListener("click", () => {
     render();
   } catch (error) {
     if (!(error instanceof RangeError)) throw error;
+    reviewChoices = [];
+    rememberDraft();
+    render();
     status("兩版差異過大，請依版本對照手動整合。");
   }
 });
 $("discard").addEventListener("click", () => {
   closeReview();
+  reviewChoices = [];
+  rememberDraft();
   render();
   $("preview").focus();
 });
