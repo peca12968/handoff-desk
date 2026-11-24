@@ -75,10 +75,12 @@ curl -sS -H 'Content-Type: application/json' --data-binary @examples/taipei-new-
 
 ## 驗證
 
-完成 Release 建置後執行 `python -m unittest -v`（Python 3.12）。[整合測試](test_api.py)會在隨機本機埠啟動實際 API，驗證台北與紐約、夏令時間兩個方向、尼泊爾 45 分鐘偏移、週日夜班跨週、重疊行程、回傳筆數上限與輸入錯誤。另外用 12 組固定種子的班表逐筆比對獨立的區間相交算法。[GitHub Actions](.github/workflows/ci.yml)在 Linux 與 Windows 建置及測試相同程式。
+完成 Release 建置後執行 `python -m unittest -v`（Python 3.12）。[整合測試](test_api.py)會在隨機本機埠啟動實際 API，驗證台北與紐約、夏令時間兩個方向、尼泊爾 45 分鐘偏移、週日夜班跨週、重疊行程、回傳筆數上限與輸入錯誤。另外用 12 組固定種子的班表逐筆比對獨立的區間相交算法。[GitHub Actions](.github/workflows/system.yml)在 Linux 與 Windows 建置及測試相同程式。
 
 出席門檻另用 64 組合成班表獨立逐人檢查忙碌區間，核對候選總數、回傳起點及每場出席名單。邊界案例驗證 32 人上限，以及夏令時間回撥當天兩個不同偏移的 01:00。
 
 **履歷用語**　以 ASP.NET Core 實作跨時區會議排程 API，利用連續空檔與位元遮罩篩選必要成員及選填人數，以 HTTP 整合測試驗證完整出席、跨午夜和夏令時間邊界。
 
 本專案為 AI 輔助開發的作品集示範。所有班表皆為合成資料。
+
+[同庫模組與整合測試](modules/README.md)
