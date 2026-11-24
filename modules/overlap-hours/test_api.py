@@ -107,6 +107,66 @@ class AvailabilityTests(unittest.TestCase):
         query["attendance"]["minimumOptional"] = 31
         self.assertEqual(self.post(query)["totalSlots"], 1)
 
+    def test_preferred_example_reorders_all_candidates_before_limit(self):
+        query = json.loads((ROOT / "examples/preferred-hours.json").read_text(encoding="utf-8"))
+        fixture = json.loads((ROOT / "examples/preferred-hours-result.json").read_text(encoding="utf-8"))
+        self.assertEqual(self.post(query | {"rankBy": "earliest"}), fixture["earliest"])
+        del query["rankBy"]
+        self.assertEqual(self.post(query), fixture["earliest"])
+        ranked = self.post(query | {"rankBy": "preferred"})
+        self.assertEqual(ranked, fixture["preferred"])
+        self.assertEqual([iso(slot["start"])[-5:] for slot in ranked["slots"]], ["14:00", "14:15", "13:45", "13:30"])
+        self.assertEqual([slot["preference"]["totalOutsideMinutes"] for slot in ranked["slots"]], [0, 0, 30, 60])
+        self.assertEqual(self.post(query | {"rankBy": "preferred", "limit": 1}),
+                         {"totalSlots": 4, "slots": ranked["slots"][:1]})
+
+    def test_preferred_ranking_preserves_optional_coverage_priority(self):
+        query = scenario("2024-11-04T13:00Z", "2024-11-04T14:00Z", "UTC", [1], "13:00", "14:00")
+        person = query["participants"][0]
+        person["preferred"] = [{"days": [1], "start": "13:00", "end": "13:30"}]
+        query["participants"].append({"id": "support", "zone": "UTC", "working": [
+            {"days": [1], "start": "13:30", "end": "14:00"}], "preferred": []})
+        query["attendance"] = {"optionalIds": ["support"], "minimumOptional": 0}
+        ranked = self.post(query | {"rankBy": "preferred"})
+        self.assertEqual([len(slot["local"]) for slot in ranked["slots"]], [2, 1])
+        self.assertEqual([slot["preference"] for slot in ranked["slots"]], [
+            {"maximumOutsideMinutes": 30, "totalOutsideMinutes": 60},
+            {"maximumOutsideMinutes": 0, "totalOutsideMinutes": 0},
+        ])
+
+    def test_preferred_ranking_minimizes_worst_person_before_the_total(self):
+        query = scenario("2024-11-04T13:00Z", "2024-11-04T14:30Z", "UTC", [1], "13:00", "14:30")
+        base = query["participants"][0]
+        first = [("13:00", "13:30"), ("13:30", "13:50"), ("14:00", "14:20")]
+        second = [("13:00", "13:10"), ("13:30", "13:50"), ("14:00", "14:30")]
+        query["participants"] = [base | {"id": name, "preferred": [
+            {"days": [1], "start": a, "end": b} for a, b in ranges]} for name, ranges in (("one", first), ("two", second))]
+        ranked = self.post(query | {"rankBy": "preferred"})
+        self.assertEqual([iso(slot["start"])[-5:] for slot in ranked["slots"]], ["14:00", "13:30", "13:00"])
+        self.assertEqual([slot["preference"] for slot in ranked["slots"]], [
+            {"maximumOutsideMinutes": 10, "totalOutsideMinutes": 10},
+            {"maximumOutsideMinutes": 10, "totalOutsideMinutes": 20},
+            {"maximumOutsideMinutes": 20, "totalOutsideMinutes": 20},
+        ])
+
+    def test_preferred_minutes_count_both_offsets_during_the_repeated_hour(self):
+        query = scenario("2024-11-03T05:00Z", "2024-11-03T07:00Z", "America/New_York", [7], "01:00", "02:00", 60, 30)
+        query["participants"][0]["preferred"] = [{"days": [7], "start": "01:15", "end": "01:45"}]
+        result = self.post(query | {"rankBy": "preferred"})
+        self.assertEqual(result["totalSlots"], 3)
+        for slot in result["slots"]:
+            self.assertEqual(slot["preference"], {"maximumOutsideMinutes": 30, "totalOutsideMinutes": 30})
+        middle = result["slots"][1]["local"][0]
+        self.assertEqual(middle["start"], "2024-11-03T01:30:00-04:00")
+        self.assertEqual(middle["end"], "2024-11-03T01:30:00-05:00")
+
+    def test_invalid_preferred_ranking_returns_400(self):
+        query = scenario("2024-11-04T13:00Z", "2024-11-04T14:00Z", "UTC", [1], "13:00", "14:00")
+        self.post(query | {"rankBy": "unknown"}, expected=400)
+        person = query["participants"][0]
+        person["preferred"] = [{"days": [8], "start": "13:00", "end": "13:30"}]
+        self.post(query | {"rankBy": "preferred"}, expected=400)
+
     def test_optional_coverage_in_repeated_hour_uses_actual_instants(self):
         query = scenario("2024-11-03T05:00Z", "2024-11-03T07:00Z", "America/New_York", [7], "01:00", "02:00", 60, 30)
         base = query["participants"][0]

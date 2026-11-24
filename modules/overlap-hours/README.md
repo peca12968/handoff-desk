@@ -60,12 +60,22 @@ curl -sS -H 'Content-Type: application/json' --data-binary @examples/taipei-new-
 
 每人最多 366 筆日期例外，每日最多 50 個時段。重複日期、無效日曆日期或缺少工作時段陣列，都會收到 HTTP 400。省略 overrides 的既有請求沿用每週班表。
 
+### 按出席與偏好排序
+
+把 [preferred-hours.json](examples/preferred-hours.json) 送到同一個端點。台北同事偏好當地 22:00–23:00，紐約同事偏好 09:00–10:00。兩種排序都找到 4 個可行時段。「最早先列」第一場是 UTC 13:30，有 60 人分鐘落在偏好外。「依偏好排序」第一場改為 UTC 14:00，三人都能全程出席，偏好外分鐘為 0。[兩種排序的實際回應](examples/preferred-hours-result.json)
+
+- 指定 `rankBy: "preferred"` 後，先按全程出席人數排名，再優先選擇單一出席者的偏好外分鐘上限較低、全體偏好外分鐘總和較低的時段。各項相同時以 UTC 起點排序。`limit` 在排序後套用，`totalSlots` 仍計入所有符合出席門檻的時段。
+- `preferred` 與 `working` 使用相同的每週當地時間格式，每人最多 50 條。省略或傳入 `null` 表示沒有偏好限制，空陣列表示沒有偏好時段。每日例外與忙碌期間仍決定實際可出席範圍。
+- 回應的 `preference.maximumOutsideMinutes` 與 `totalOutsideMinutes` 以實際經過分鐘計算，夏令時間回撥的兩個當地 01:30 各有自己的 UTC 偏移。省略 `rankBy` 或使用 `earliest` 時，回應沿用原有欄位與 UTC 起點排序。
+
+可將排名後的回應交給同庫的 Slot Calendar，依起點匯出 iCalendar。整合測試選取第一名時段，驗證產物的 UTC 起訖與兩地當地時間。[匯出整合測試](modules/slot-calendar/test_calendar.js)
+
 ### 搜尋區間與回應
 
 - `POST /availability/search` 接收 JSON。搜尋範圍與忙碌區間都使用帶 Z 或數字偏移的時間，精確到整分鐘。所有區間含起點、排除終點，所以前一場結束的瞬間就能開始下一場。
 - `working` 使用每位參與者的當地時間。星期一至星期日以 1 至 7 表示。若班表寫 23:30–01:00，`days` 指開始上班的那一天。00:00–24:00 表示全天。多條工作規則取聯集，可用空陣列表示無可用時段。
 - `durationMinutes` 是實際經過時間。`stepMinutes` 從請求的搜尋起點開始對齊。兩者範圍為 1 至 1440 分鐘。每次最多 14 天及 32 位參與者；每人最多 50 條工作規則與 500 筆忙碌區間。
-- 回傳依 UTC 起點排序，預設最多列出 20 筆，可用 `limit` 調到 1 至 100。即使截短清單，`totalSlots` 仍包含全部候選。沒有重疊時回傳 HTTP 200 與空清單；無效時區、日期、步長或重複參與者會回傳 HTTP 400。
+- 預設回傳依 UTC 起點排序，最多列出 20 筆，可用 `limit` 調到 1 至 100。即使截短清單，`totalSlots` 仍包含全部候選。沒有重疊時回傳 HTTP 200 與空清單；無效時區、日期、步長或重複參與者會回傳 HTTP 400。
 
 ## 夏令時間的設計取捨
 

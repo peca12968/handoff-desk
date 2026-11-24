@@ -78,6 +78,20 @@ test("real two-city API response round-trips into one selected UTC event", async
   assert.doesNotMatch(event.description, /support-east/);
 });
 
+test("the top preferred slot can be exported from a ranked and truncated result", async () => {
+  const query = JSON.parse(readFileSync(path.join(upstream, "examples/preferred-hours.json"), "utf8"));
+  const report = await search({ ...query, limit: 1 });
+  assert.equal(report.totalSlots, 4);
+  assert.equal(report.slots.length, 1);
+  const [selected] = report.slots;
+  assert.deepEqual(selected.preference, { maximumOutsideMinutes: 0, totalOutsideMinutes: 0 });
+  const { event } = run(report, { start: selected.start });
+  assert.equal(event.startDate.toJSDate().toISOString(), "2024-11-04T14:00:00.000Z");
+  assert.equal(event.endDate.toJSDate().toISOString(), "2024-11-04T14:45:00.000Z");
+  assert.match(event.description, /design \(Asia\/Taipei\).*T22:00\+08:00/);
+  assert.match(event.description, /engineering \(America\/New_York\).*T09:00-05:00/);
+});
+
 test("downloadable example has the same schedule and roster as a fresh export", () => {
   const component = new ICAL.Component(ICAL.parse(readFileSync("examples/handoff.ics", "utf8")));
   const bundled = new ICAL.Event(component.getFirstSubcomponent("vevent"));

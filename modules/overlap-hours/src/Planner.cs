@@ -1,22 +1,26 @@
 using System.Globalization;
 using System.Numerics;
+using System.Text.Json.Serialization;
 
 namespace OverlapHours;
 
 public sealed record SearchRequest(string? Start, string? End, int DurationMinutes, int StepMinutes,
-                                   PersonInput?[]? Participants, int? Limit = null, AttendancePolicy? Attendance = null);
+                                   PersonInput?[]? Participants, int? Limit = null, AttendancePolicy? Attendance = null,
+                                   string? RankBy = null);
 public sealed record AttendancePolicy(string?[]? OptionalIds, int? MinimumOptional);
 public sealed record PersonInput(string? Id, string? Zone, Shift?[]? Working, Busy?[]? Busy,
-                                 DateOverride?[]? Overrides = null);
+                                 DateOverride?[]? Overrides = null, Shift?[]? Preferred = null);
 public sealed record Shift(int[]? Days, string? Start, string? End);
 public sealed record DateOverride(string? Date, WallRange?[]? Working);
 public sealed record WallRange(string? Start, string? End);
 public sealed record Busy(string? Start, string? End);
 public sealed record LocalSlot(string Id, string Zone, DateTimeOffset Start, DateTimeOffset End);
-public sealed record Slot(DateTimeOffset Start, DateTimeOffset End, LocalSlot[] Local);
+public sealed record PreferenceScore(int MaximumOutsideMinutes, int TotalOutsideMinutes);
+public sealed record Slot(DateTimeOffset Start, DateTimeOffset End, LocalSlot[] Local,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PreferenceScore? Preference = null);
 public sealed record SearchResult(int TotalSlots, Slot[] Slots);
 internal sealed record Person(string Id, TimeZoneInfo Zone, bool[] Week,
-                              Dictionary<DateOnly, bool[]> Overrides, int[] BusyChanges);
+                              Dictionary<DateOnly, bool[]> Overrides, int[] BusyChanges, bool[]? Preferred);
 
 public static class Planner
 {
@@ -67,6 +71,25 @@ public static class Planner
         return result;
     }
 
+    private static bool[] CompileWeek(Shift?[] rules, string field)
+    {
+        if (rules.Length > 50) throw new ArgumentException($"Supply up to 50 {field} rules per person");
+        var week = new bool[7 * Day];
+        foreach (var shift in rules)
+        {
+            if (shift?.Days is not { Length: >= 1 and <= 7 } days || days.Any(d => d is < 1 or > 7))
+                throw new ArgumentException($"{field} days use ISO weekdays 1 (Monday) through 7 (Sunday)");
+            var from = WallMinute(shift.Start, false);
+            var until = WallMinute(shift.End, true);
+            if (until == from) throw new ArgumentException($"A {field} rule must have a nonzero length");
+            if (until < from) until += Day;
+            foreach (var weekday in days)
+                for (var i = from; i < until; i++)
+                    week[((weekday - 1) * Day + i) % week.Length] = true;
+        }
+        return week;
+    }
+
     private static Person Prepare(PersonInput? input, DateTimeOffset start, int minutes)
     {
         if (input is null || string.IsNullOrWhiteSpace(input.Id) || input.Id.Length > 80 ||
@@ -74,22 +97,10 @@ public static class Planner
             throw new ArgumentException("Each participant requires an ID of 1 to 80 characters and a time zone");
         if (!TimeZoneInfo.TryFindSystemTimeZoneById(input.Zone, out var zone))
             throw new ArgumentException($"Unknown time zone for {input.Id}");
-        if (input.Working is null || input.Working.Length > 50 || input.Busy?.Length > 500)
+        if (input.Working is null || input.Busy?.Length > 500)
             throw new ArgumentException("Supply up to 50 working rules and 500 busy intervals per person");
-
-        var week = new bool[7 * Day];
-        foreach (var shift in input.Working)
-        {
-            if (shift?.Days is not { Length: >= 1 and <= 7 } days || days.Any(d => d is < 1 or > 7))
-                throw new ArgumentException("Working days use ISO weekdays 1 (Monday) through 7 (Sunday)");
-            var from = WallMinute(shift.Start, false);
-            var until = WallMinute(shift.End, true);
-            if (until == from) throw new ArgumentException("A working rule must have a nonzero length");
-            if (until < from) until += Day;
-            foreach (var weekday in days)
-                for (var i = from; i < until; i++)
-                    week[((weekday - 1) * Day + i) % week.Length] = true;
-        }
+        var week = CompileWeek(input.Working, "working");
+        var preferred = input.Preferred is null ? null : CompileWeek(input.Preferred, "preferred");
 
         // Prefix sums merge overlapping busy intervals without walking each interval.
         var changes = new int[minutes + 1];
@@ -103,7 +114,7 @@ public static class Planner
             changes[first]++;
             changes[last]--;
         }
-        return new Person(input.Id, zone, week, CompileOverrides(input.Overrides), changes);
+        return new Person(input.Id, zone, week, CompileOverrides(input.Overrides), changes, preferred);
     }
 
     public static SearchResult Search(SearchRequest request)
@@ -118,6 +129,9 @@ public static class Planner
         if (limit is < 1 or > 100) throw new ArgumentException("Result limit must be between 1 and 100");
         if (request.Participants is not { Length: >= 1 and <= 32 } inputs)
             throw new ArgumentException("Supply 1 to 32 participants");
+        if (request.RankBy is not (null or "earliest" or "preferred"))
+            throw new ArgumentException("rankBy must be earliest or preferred");
+        bool ranked = request.RankBy == "preferred";
         var minutes = (int)span;
         var people = inputs.Select(input => Prepare(input, start, minutes)).ToArray();
         if (people.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != people.Length)
@@ -146,9 +160,13 @@ public static class Planner
         int duration = request.DurationMinutes, step = request.StepMinutes;
         int candidates = minutes < duration ? 0 : (minutes - duration) / step + 1;
         var attendance = new uint[candidates];
+        var maximumOutside = ranked ? new int[candidates] : [];
+        var totalOutside = ranked ? new int[candidates] : [];
         for (int index = 0; index < people.Length; index++)
         {
             var person = people[index];
+            var preferred = ranked ? person.Preferred : null;
+            var outside = preferred is null ? null : new int[minutes + 1];
             var busyCount = 0;
             var run = 0;
             for (var i = 0; i < minutes; i++)
@@ -157,30 +175,48 @@ public static class Planner
                 var local = TimeZoneInfo.ConvertTime(start.AddMinutes(i), person.Zone);
                 var weekday = ((int)local.DayOfWeek + 6) % 7;
                 var minute = local.Hour * 60 + local.Minute;
+                var wallIndex = weekday * Day + minute;
+                if (outside is not null)
+                    outside[i + 1] = outside[i] + (preferred![wallIndex] ? 0 : 1);
                 var working = person.Overrides.TryGetValue(DateOnly.FromDateTime(local.DateTime), out var specialDay)
-                    ? specialDay[minute] : person.Week[weekday * Day + minute];
+                    ? specialDay[minute] : person.Week[wallIndex];
                 run = busyCount == 0 && working ? run + 1 : 0;
                 int offset = i + 1 - duration;
-                if (run >= duration && offset % step == 0) attendance[offset / step] |= 1u << index;
+                if (run < duration || offset % step != 0) continue;
+                int candidate = offset / step;
+                attendance[candidate] |= 1u << index;
+                if (outside is not null)
+                {
+                    var cost = outside[i + 1] - outside[offset];
+                    maximumOutside[candidate] = Math.Max(maximumOutside[candidate], cost);
+                    totalOutside[candidate] += cost;
+                }
             }
         }
 
-        var slots = new List<Slot>();
-        var total = 0;
+        var available = new List<int>();
         for (var candidate = 0; candidate < candidates; candidate++)
         {
             var eligible = attendance[candidate];
             if ((eligible & required) != required || BitOperations.PopCount(eligible & ~required) < minimumOptional)
                 continue;
-            total++;
-            if (slots.Count == limit) continue;
+            available.Add(candidate);
+        }
+
+        IEnumerable<int> ordered = ranked ? available.OrderByDescending(i => BitOperations.PopCount(attendance[i]))
+            .ThenBy(i => maximumOutside[i]).ThenBy(i => totalOutside[i]).ThenBy(i => i) : available;
+        var slots = new List<Slot>();
+        foreach (var candidate in ordered.Take(limit))
+        {
+            var eligible = attendance[candidate];
             var from = start.AddMinutes(candidate * step);
             var until = from.AddMinutes(duration);
             var locals = people.Where((_, index) => (eligible & (1u << index)) != 0)
                 .Select(p => new LocalSlot(p.Id, p.Zone.Id,
                 TimeZoneInfo.ConvertTime(from, p.Zone), TimeZoneInfo.ConvertTime(until, p.Zone))).ToArray();
-            slots.Add(new Slot(from, until, locals));
+            var score = ranked ? new PreferenceScore(maximumOutside[candidate], totalOutside[candidate]) : null;
+            slots.Add(new Slot(from, until, locals, score));
         }
-        return new SearchResult(total, slots.ToArray());
+        return new SearchResult(available.Count, slots.ToArray());
     }
 }

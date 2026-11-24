@@ -60,6 +60,10 @@ npm run dev
 
 測試先讓早班存入第 2 版，再以晚班的舊草稿觸發 HTTP 412。它使用作品集內的 Focus Receipt 比對八次按鍵後的焦點，最後從 SQLite 歷史 API 讀回第 3 版，核對兩班文字都已保存。另一個測試延後伺服器回應，確認等待期間已移到其他連結的焦點會留在原處。[鍵盤整合測試](tests/desk.spec.js) · [Focus Receipt 固定版本](https://github.com/peca12968/handoff-desk/tree/e339536fcfaba6cd909cd43234a3ebd723e23eb8)
 
+## 排出跨時區交班時段
+
+Overlap Hours 先核對必要成員與支援人員能否全程出席，再依各地偏好時段排序。台北與紐約的 45 分鐘範例中，從最早的 UTC 13:30 改選 14:00，偏好外的時間從 60 人分鐘降為 0。選好的時段可用同庫工具匯出 iCalendar。[實作與重跑方式](modules/overlap-hours/README.md#按出席與偏好排序)
+
 ## 自動化驗證
 
 保留已建置的 API，先結束上述兩個示範服務，再在前端目錄執行以下指令。Playwright 會啟動獨立 API 與前端預覽，每次執行使用新的本機測試資料庫。
