@@ -1,4 +1,5 @@
 import { openReview, closeReview } from "./merge-review.js";
+import { revisionHistory } from "./revision-history.js";
 
 const $ = id => document.getElementById(id);
 const draft = $("draft");
@@ -16,6 +17,19 @@ let latest = null;
 let busy = false;
 let verified = false;
 let recovering = false;
+
+const historyPanel = revisionHistory({
+  read,
+  canStage: () => verified && !busy && !hasDraft(),
+  matchesEditor: candidate => candidate.text === base?.text,
+  stage: candidate => {
+    draft.value = candidate.text;
+    rememberDraft();
+    render();
+    status(`已把第 ${candidate.rev} 版載入草稿。`);
+    draft.focus();
+  }
+});
 
 function status(message) {
   $("status").textContent = message;
@@ -70,6 +84,7 @@ function render() {
   $("retry").disabled = busy;
   $("preview").disabled = busy;
   $("conflict").hidden = !latest;
+  historyPanel.sync(Boolean(base && verified));
   if (latest) {
     $("base-label").textContent = "編輯依據 · 第 " + base.rev + " 版";
     $("base-text").textContent = base.text;
@@ -85,9 +100,10 @@ function version(response, text) {
   return { text, tag, rev };
 }
 
-async function read() {
-  const response = await fetch(endpoint, { cache: "no-store" });
-  if (response.status === 404) throw new Error("找不到這份交班紀錄，請確認網址。");
+async function read(revision, signal) {
+  const path = revision === undefined ? endpoint : endpoint + "/revisions/" + revision;
+  const response = await fetch(path, { cache: "no-store", signal });
+  if (response.status === 404) throw new Error(revision === undefined ? "找不到這份交班紀錄，請確認網址。" : "找不到這個版本，請更新版本列表。");
   if (!response.ok) throw new Error("無法讀取紀錄，請稍後重試。");
   const text = await response.text();
   return version(response, text.replace(/\r\n?/g, "\n"));

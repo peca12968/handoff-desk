@@ -38,6 +38,30 @@
         <button id="discard">取消預覽</button>
       </section>
     </section>
+    <section id="revision-history" hidden aria-labelledby="history-title">
+      <div class="history-heading">
+        <h2 id="history-title">版本歷史</h2>
+        <button id="history-toggle" type="button" aria-expanded="false" aria-controls="history-panel">查看版本歷史</button>
+      </div>
+      <div id="history-panel" hidden>
+        <div class="history-controls">
+          <label for="history-version">查看版本</label><select id="history-version" disabled></select>
+          <button id="history-refresh" type="button">更新版本列表</button>
+        </div>
+        <div class="history-controls" aria-label="歷史分頁">
+          <button id="history-newer" type="button" disabled>較新版本</button>
+          <button id="history-older" type="button" disabled>較舊版本</button>
+          <span id="history-range"></span>
+        </div>
+        <p id="history-status" aria-live="polite"></p>
+        <div id="history-comparison" class="columns" hidden>
+          <section><h3 id="history-selected-title"></h3><pre id="history-selected-text"></pre></section>
+          <section><h3 id="history-head-title"></h3><pre id="history-head-text"></pre></section>
+        </div>
+        <button id="history-stage" type="button" disabled>載入舊版至草稿</button>
+        <p id="history-stage-hint" hidden>請先處理編輯區的草稿，再載入舊版。</p>
+      </div>
+    </section>
   </main>
   <script type="module" src="/desk.js"></script>
 </body>

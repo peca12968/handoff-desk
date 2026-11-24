@@ -63,3 +63,10 @@ pre { margin: .8rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: 
   .topline { margin-bottom: 1.2rem; }
   .sheet-head, .sheet-foot { padding: .85rem 1rem; }
 }
+#revision-history { margin-top: 1.3rem; padding: 1.25rem; background: #fff; border: 1px solid #bccfc3; border-radius: .6rem; }
+.history-heading, .history-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem .8rem; }
+.history-heading { justify-content: space-between; }
+.history-controls { margin: .8rem 0; }
+.history-controls select { font: inherit; color: inherit; border: 1px solid #52766b; background: #fff; border-radius: .35rem; padding: .4rem; }
+#history-stage { margin-top: .85rem; }
+#history-stage-hint, #history-range { color: #495d51; font-size: .9rem; }
