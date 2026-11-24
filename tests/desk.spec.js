@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { replay } from "focus-receipt/focus.mjs";
+import recovery from "../examples/draft-recovery.json" with { type: "json" };
 
 const editor = page => page.getByRole("textbox", { name: "交班內容" });
 const action = (page, name) => page.getByRole("button", { name, exact: true });
@@ -140,6 +141,77 @@ test("keyboard retry recovers the editor after a failed initial read", async ({ 
   await page.keyboard.press("Enter");
   await expect(editor(page)).toBeFocused();
   await expect(editor(page)).toHaveValue("冷藏庫");
+});
+
+test("restores an unsubmitted draft in the same tab and removes the backup after creation", async ({ page }) => {
+  page.on("dialog", dialog => dialog.accept());
+  await page.goto("/");
+  await editor(page).fill("尚未建立的交班內容");
+  await page.reload();
+  await expect(page.getByRole("status")).toHaveText("已復原尚未建立的草稿");
+  await expect(editor(page)).toHaveValue("尚未建立的交班內容");
+  await action(page, "建立紀錄").click();
+  await expect(page.getByRole("status")).toHaveText("已儲存第 1 版");
+  await page.goto("/");
+  await expect(editor(page)).toHaveValue("");
+});
+
+test("keeps a restored offline draft separate from another tab and checks the latest revision before saving", async ({ page, context, request }) => {
+  page.on("dialog", dialog => dialog.accept());
+  await create(page, recovery.original);
+  await editor(page).fill(recovery.draft);
+  const opened = context.waitForEvent("page");
+  await page.getByRole("link", { name: "在新分頁開啟" }).click();
+  const peer = await opened;
+  await expect(editor(peer)).toHaveValue(recovery.original);
+  await editor(peer).fill(recovery.server);
+  await action(peer, "儲存修改").click();
+  await expect(peer.getByRole("status")).toHaveText("已儲存第 2 版");
+
+  await page.route("**/api/notes/*", route => route.abort());
+  await page.reload();
+  await expect(page.getByRole("status")).toContainText("草稿已保留");
+  await expect(editor(page)).toHaveValue(recovery.draft);
+  await expect(editor(page)).toBeEnabled();
+  await expect(action(page, "儲存修改")).toBeDisabled();
+  await editor(page).fill(recovery.offline_edit);
+  await page.reload();
+  await expect(editor(page)).toHaveValue(recovery.offline_edit);
+
+  await page.unroute("**/api/notes/*");
+  await action(page, "重新讀取").click();
+  await expect(page.getByRole("status")).toHaveText("已復原草稿，伺服器有更新的版本");
+  await expect(page.locator("#base-text")).toHaveText(recovery.original);
+  await expect(page.locator("#latest-text")).toHaveText(recovery.server);
+  await expect(editor(page)).toHaveValue(recovery.offline_edit);
+  await editor(page).fill(recovery.merged);
+  await action(page, "儲存合併結果").click();
+  await expect(page.getByRole("status")).toHaveText("已儲存第 3 版");
+  await page.reload();
+  await expect(page.getByRole("status")).toHaveText("已載入第 3 版");
+  const id = new URL(page.url()).searchParams.get("note");
+  const revision = await request.get("/api/notes/" + id + "/revisions/3");
+  expect(revision.status()).toBe(200);
+  expect(await revision.text()).toBe(recovery.merged);
+});
+
+test("clears a recovered draft when the previous save reached SQLite but its response was lost", async ({ page }) => {
+  page.on("dialog", dialog => dialog.accept());
+  await create(page, "原稿");
+  await page.route("**/api/notes/*", async route => {
+    if (route.request().method() !== "PUT") return route.continue();
+    const response = await route.fetch();
+    expect(response.status()).toBe(204);
+    await route.abort();
+  });
+  await editor(page).fill("實際已經儲存");
+  await action(page, "儲存修改").click();
+  await expect(page.getByRole("status")).toContainText("重試");
+  await page.reload();
+  await expect(page.getByRole("status")).toHaveText("已載入第 2 版");
+  await expect(editor(page)).toHaveValue("實際已經儲存");
+  await expect(action(page, "儲存修改")).toBeDisabled();
+  await expect(page.locator("#conflict")).toBeHidden();
 });
 
 test("a delayed save preserves focus when the user has moved elsewhere", async ({ page }) => {

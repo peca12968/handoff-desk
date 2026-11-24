@@ -36,7 +36,11 @@ npm run dev
 
 每次讀取都保存當時的內容、版號與 ETag。編輯器儲存時用 `If-Match` 帶回使用者看過的版本。收到 HTTP 412 後會取得最新內容並保留本頁草稿。使用者按下合併按鈕時，編輯器會帶上對照欄的 ETag。若第三筆修改搶先寫入，頁面會重新開啟對照，剛才整合的文字仍在編輯區。[編輯流程](ui/desk.js)
 
-此示範透過綁定本機的 Vite 代理連線至 SQLite API，信任同一台電腦上的使用者。草稿保存在目前分頁，成功儲存後才會寫入資料庫。關閉含修改的分頁時，編輯器會向瀏覽器申請離開提示。
+此示範透過綁定本機的 Vite 代理連線至 SQLite API，信任同一台電腦上的使用者。尚未儲存的草稿與編輯依據保存在該分頁的 `sessionStorage`，同一分頁重新整理後可繼續編輯。透過「在新分頁開啟」另開的編輯器從伺服器讀取已儲存內容。分頁關閉前，編輯器會向瀏覽器申請離開提示。
+
+### 斷線後復原草稿
+
+既有紀錄重新整理後若暫時讀不到伺服器，仍可編輯復原的草稿。重新讀取成功後，工作台以草稿的原始 ETag 和伺服器最新版本核對。伺服器已有新內容時，可利用版本對照整合。若伺服器已儲存相同文字，例如上次寫入成功但回應中斷，編輯器會載入最新版並清除備份。瀏覽器阻擋儲存空間時，頁面會提示先複製尚未備份的內容。[作品站與端對端測試共用的案例資料](examples/draft-recovery.json)
 
 ## 用鍵盤完成一次衝突合併
 
@@ -60,7 +64,7 @@ npx playwright install chromium firefox
 npm test
 ```
 
-十個案例分別在 Chromium 與 Firefox 執行，涵蓋三方合併預覽、鍵盤操作、連續寫入衝突、360 像素寬度與 UTF-8 大小邊界、斷線重試、焦點及錯誤連結。測試會向 SQLite 歷史 API 讀回四個版本，逐字比對每次修改。GitHub Actions 在 Ubuntu 使用固定提交的後端重跑相同測試。[編輯器測試](tests/desk.spec.js) · [三方合併測試](tests/merge.spec.js) · [CI](.github/workflows/system.yml)
+Chromium 與 Firefox 共用同一套案例，涵蓋三方合併、鍵盤與焦點、連續寫入衝突、窄螢幕、UTF-8 大小邊界，以及離線重新整理、分頁草稿隔離和寫入成功後回應中斷。測試透過歷史 API 讀回 SQLite 各版紀錄並逐字核對。GitHub Actions 在 Ubuntu 重跑相同測試。[編輯器測試](tests/desk.spec.js) · [三方合併測試](tests/merge.spec.js) · [CI](.github/workflows/system.yml)
 
 **履歷用語**　以 JavaScript、HTTP ETag 與 Playwright 實作交班編輯器，保留衝突草稿並提供版本對照，透過兩個瀏覽器分頁與 SQLite 整合測試驗證連續衝突後的四版歷史。
 

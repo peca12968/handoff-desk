@@ -14,10 +14,10 @@
     <div class="layout">
       <section class="sheet" aria-labelledby="editor-title">
         <div class="sheet-head"><h2 id="editor-title"><label for="draft">交班內容</label></h2><span id="version">新紀錄</span></div>
-        <textarea id="draft" rows="10" placeholder="記下已完成的事、待處理事項與接班提醒…" disabled></textarea>
+        <textarea id="draft" rows="10" autocomplete="off" placeholder="記下已完成的事、待處理事項與接班提醒…" disabled></textarea>
         <div class="sheet-foot"><span id="count">0 / 16,384 位元組</span><button id="save" disabled>建立紀錄</button></div>
       </section>
-      <aside aria-labelledby="state-heading"><h2 id="state-heading">紀錄狀態</h2><p id="status" role="status" aria-live="polite">準備中…</p><p id="guide">首次儲存後，可在新分頁開啟同一份紀錄。</p><button id="retry" hidden>重新讀取</button></aside>
+      <aside aria-labelledby="state-heading"><h2 id="state-heading">紀錄狀態</h2><p id="status" role="status" aria-live="polite">準備中…</p><p id="recovery-warning" aria-live="polite" hidden>瀏覽器暫時無法備份草稿，請先複製內容再離開本頁。</p><p id="guide">首次儲存後，可在新分頁開啟同一份紀錄。</p><button id="retry" hidden>重新讀取</button></aside>
     </div>
     <section id="conflict" hidden aria-labelledby="comparison">
       <h2 id="comparison" tabindex="-1">版本對照</h2>
