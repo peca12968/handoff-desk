@@ -1,0 +1,16 @@
+{
+  "shifts": {
+    "registration": {"start": 0, "end": 120, "need": 2, "skill": "desk"},
+    "soundcheck": {"start": 60, "end": 180, "need": 1, "skill": "audio"},
+    "helpdesk": {"start": 120, "end": 240, "need": 1, "skill": "desk"},
+    "broadcast": {"start": 180, "end": 300, "need": 1, "skill": "audio"},
+    "captions": {"start": 180, "end": 240, "need": 1, "skill": "caption"}
+  },
+  "crew": {
+    "mei": {"skills": ["desk", "audio", "caption"], "budget_minutes": 240,
+            "bids": {"registration": 0, "soundcheck": 1, "helpdesk": 0, "broadcast": 0, "captions": 1}},
+    "lin": {"skills": ["desk"], "budget_minutes": 240, "bids": {"registration": 2, "helpdesk": 1}},
+    "yu": {"skills": ["desk"], "budget_minutes": 120, "bids": {"registration": 1, "helpdesk": 1, "captions": 0}},
+    "bao": {"skills": ["audio"], "budget_minutes": 120, "bids": {"broadcast": 3}}
+  }
+}

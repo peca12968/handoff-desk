@@ -1,0 +1,7 @@
+{
+  "name": "slot-calendar-tests",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test_calendar.js" },
+  "devDependencies": { "ical.js": "2.2.1" }
+}

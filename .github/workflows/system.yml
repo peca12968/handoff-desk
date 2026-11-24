@@ -88,3 +88,81 @@ jobs:
     defaults:
       run:
         working-directory: modules/focus-receipt
+  overlap-hours-api:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+        - ubuntu-latest
+        - windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - run: dotnet build src -c Release
+    - run: python -m unittest -v
+    defaults:
+      run:
+        working-directory: modules/overlap-hours
+  overlap-hours-slot-calendar-calendar:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+        - ubuntu-latest
+        - windows-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.12'
+    - uses: actions/setup-node@v6
+      with:
+        node-version: '24'
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+    - run: dotnet build ../../src -c Release
+    - run: npm ci
+    - run: npm test
+    defaults:
+      run:
+        working-directory: modules/overlap-hours/modules/slot-calendar
+  crew-cover-roster:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+        - ubuntu-latest
+        - windows-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.12'
+    - run: python -m pip install -r requirements.txt
+    - run: python -m unittest -v
+    - run: python crew_cover.py examples/conference.json --absent bao
+    defaults:
+      run:
+        working-directory: modules/crew-cover
+  margin-anchor-anchors:
+    strategy:
+      matrix:
+        os:
+        - ubuntu-latest
+        - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - run: node --test
+    defaults:
+      run:
+        working-directory: modules/margin-anchor
