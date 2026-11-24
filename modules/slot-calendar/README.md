@@ -28,12 +28,10 @@ python slot_calendar.py examples/handoff-result.json --start 2024-11-04T13:30Z -
 
 ## 重現互通測試
 
-測試另需 .NET 10 SDK、Node.js 24 與 npm。將兩個專案放在相鄰的目錄，從本專案執行。
+測試另需 .NET 10 SDK、Node.js 24 與 npm。從 `modules/slot-calendar` 執行。
 
 ```sh
-git clone https://github.com/peca12968/overlap-hours.git ../overlap-hours
-git -C ../overlap-hours checkout 461fa101230d3b4c6f2a2043cdf10d86b94da780
-dotnet build ../overlap-hours/src -c Release
+dotnet build ../../src -c Release
 npm ci
 npm test
 ```

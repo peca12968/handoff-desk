@@ -31,11 +31,6 @@ jobs:
         - windows-latest
     steps:
     - uses: actions/checkout@v7
-    - uses: actions/checkout@v7
-      with:
-        ref: 461fa101230d3b4c6f2a2043cdf10d86b94da780
-        path: modules/slot-calendar/upstream
-        persist-credentials: false
     - uses: actions/setup-python@v7
       with:
         python-version: '3.12'
@@ -45,11 +40,9 @@ jobs:
     - uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
-    - run: dotnet build upstream/src -c Release
+    - run: dotnet build ../../src -c Release
     - run: npm ci
     - run: npm test
-      env:
-        OVERLAP_DIR: upstream
     defaults:
       run:
         working-directory: modules/slot-calendar

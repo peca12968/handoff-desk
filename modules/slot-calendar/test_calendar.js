@@ -8,7 +8,7 @@ import { createInterface } from "node:readline";
 import { after, before, test } from "node:test";
 import ICAL from "ical.js";
 
-const upstream = path.resolve(process.env.OVERLAP_DIR || "../overlap-hours");
+const upstream = path.resolve(process.env.OVERLAP_DIR || "../..");
 const fixture = JSON.parse(readFileSync("examples/handoff-result.json", "utf8"));
 const first = "2024-11-04T13:30Z";
 const uid = "handoff-20241104@example.invalid";
