@@ -14,11 +14,6 @@ jobs:
         - firefox
     steps:
     - uses: actions/checkout@v7
-    - uses: actions/checkout@v7
-      with:
-        ref: 033d91434d169d557d438ddd11c0a87fc5f7c4e5
-        path: upstream
-        persist-credentials: false
     - uses: actions/setup-node@v7
       with:
         node-version: '24'
@@ -26,14 +21,12 @@ jobs:
     - uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
-    - run: dotnet restore upstream/src --locked-mode
-    - run: dotnet build upstream/src -c Release --no-restore
+    - run: dotnet restore modules/handoff-notes-api/src --locked-mode
+    - run: dotnet build modules/handoff-notes-api/src -c Release --no-restore
     - run: npm ci
     - run: npm run build
     - run: npx playwright install --with-deps ${{ matrix.engine }}
     - run: npm test -- --project=${{ matrix.engine }}
-      env:
-        HANDOFF_API_DIR: upstream
   handoff-notes-api-api:
     runs-on: ${{ matrix.os }}
     strategy:

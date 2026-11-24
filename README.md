@@ -6,13 +6,11 @@
 
 ## 在本機重現
 
-需要 Git、.NET 10 SDK 與 Node.js 24。從同一個父目錄取得這兩個專案，在第一個終端機啟動 API。
+需要 Git、.NET 10 SDK 與 Node.js 24。從同一份儲存庫，在第一個終端機啟動 API。
 
 ```sh
 git clone https://github.com/peca12968/handoff-desk.git
-git clone https://github.com/peca12968/handoff-desk.git
-git -C handoff-notes-api checkout 033d91434d169d557d438ddd11c0a87fc5f7c4e5
-cd handoff-notes-api
+cd handoff-desk/modules/handoff-notes-api
 dotnet restore src --locked-mode
 dotnet build src -c Release --no-restore
 dotnet src/bin/Release/net10.0/HandoffNotes.dll --urls http://127.0.0.1:5087
