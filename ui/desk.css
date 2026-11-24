@@ -70,3 +70,6 @@ pre { margin: .8rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: 
 .history-controls select { font: inherit; color: inherit; border: 1px solid #52766b; background: #fff; border-radius: .35rem; padding: .4rem; }
 #history-stage { margin-top: .85rem; }
 #history-stage-hint, #history-range { color: #495d51; font-size: .9rem; }
+#history-selected-text { min-height: 7rem; margin-top: .8rem; padding: .65rem; border: 1px solid #bccfc3; border-radius: .35rem; }
+#history-head-text mark { background: #e6f2ad; color: #253918; box-shadow: 0 1px #769046; }
+#history-quote-status { margin: 0; color: #495d51; font-size: .9rem; overflow-wrap: anywhere; }

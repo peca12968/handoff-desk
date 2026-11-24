@@ -55,7 +55,15 @@
         </div>
         <p id="history-status" aria-live="polite"></p>
         <div id="history-comparison" class="columns" hidden>
-          <section><h3 id="history-selected-title"></h3><pre id="history-selected-text"></pre></section>
+          <section>
+            <h3 id="history-selected-title"></h3>
+            <textarea id="history-selected-text" aria-labelledby="history-selected-title" readonly rows="6"></textarea>
+            <div class="history-controls">
+              <button id="history-locate" type="button">在對照版定位選取文字</button>
+              <button id="history-clear-quote" type="button" hidden>清除定位</button>
+            </div>
+            <p id="history-quote-status" aria-live="polite"></p>
+          </section>
           <section><h3 id="history-head-title"></h3><pre id="history-head-text"></pre></section>
         </div>
         <button id="history-stage" type="button" disabled>載入舊版至草稿</button>

@@ -20,6 +20,7 @@ let recovering = false;
 
 const historyPanel = revisionHistory({
   read,
+  quoteKey: () => storageKey.replace(":draft:", ":quote:"),
   canStage: () => verified && !busy && !hasDraft(),
   matchesEditor: candidate => candidate.text === base?.text,
   stage: candidate => {

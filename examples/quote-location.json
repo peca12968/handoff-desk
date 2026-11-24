@@ -1,0 +1,50 @@
+{
+  "source": "早班｜先核對箱數，再簽收。\n晚班｜先核對箱數，再封箱。",
+  "selection": {
+    "start": 18,
+    "end": 22
+  },
+  "states": [
+    {
+      "revision": 2,
+      "text": "交接摘要已更新。\n晚班｜先核對箱數，再封箱。\n早班｜先核對箱數，再簽收。",
+      "status": "attached",
+      "occurrences": 2,
+      "candidates": [
+        {
+          "start": 13,
+          "end": 17,
+          "before": 6,
+          "after": 5
+        }
+      ]
+    },
+    {
+      "revision": 3,
+      "text": "甲：核對箱數。\n乙：核對箱數。",
+      "status": "ambiguous",
+      "occurrences": 2,
+      "candidates": [
+        {
+          "start": 2,
+          "end": 6,
+          "before": 0,
+          "after": 0
+        },
+        {
+          "start": 10,
+          "end": 14,
+          "before": 0,
+          "after": 0
+        }
+      ]
+    },
+    {
+      "revision": 4,
+      "text": "交接摘要｜出貨清點已交接。",
+      "status": "missing",
+      "occurrences": 0,
+      "candidates": []
+    }
+  ]
+}

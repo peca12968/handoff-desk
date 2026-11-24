@@ -1,11 +1,18 @@
+import { quoteLocation } from "./quote-location.js";
+
 const pageSize = 20;
 
-export function revisionHistory({ read, canStage, matchesEditor, stage }) {
+export function revisionHistory({ read, canStage, matchesEditor, stage, quoteKey }) {
   const get = name => document.getElementById("history-" + name);
   const toggle = get("toggle"), panel = get("panel"), versions = get("version");
   const newer = get("newer"), older = get("older"), stageButton = get("stage");
   const message = get("status"), comparison = get("comparison");
   let head = null, selected = null, top = 0, active = null;
+  const selectedText = get("selected-text");
+  const showQuote = quoteLocation({
+    source: selectedText, output: get("head-text"), locate: get("locate"), clear: get("clear-quote"),
+    status: get("quote-status"), storageKey: quoteKey, selected: () => selected, head: () => head,
+  });
 
   function sync(available) {
     if (available !== undefined) document.getElementById("revision-history").hidden = !available;
@@ -39,9 +46,10 @@ export function revisionHistory({ read, canStage, matchesEditor, stage }) {
       if (value.rev !== revision) throw Error("伺服器回傳的版號與選取版本不符。");
       selected = value;
       get("selected-title").textContent = `已選第 ${selected.rev} 版`;
-      get("selected-text").textContent = selected.text;
+      selectedText.value = selected.text;
+      selectedText.setSelectionRange(0, 0);
       get("head-title").textContent = `對照第 ${head.rev} 版`;
-      get("head-text").textContent = head.text;
+      showQuote();
       comparison.hidden = false;
       message.textContent = selected.text === head.text ? "兩版內容相同。" : "兩版內容有差異。";
       sync();
