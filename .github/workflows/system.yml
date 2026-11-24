@@ -1,0 +1,97 @@
+name: Verify handoff-desk system
+'on':
+- push
+- pull_request
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        engine:
+        - chromium
+        - firefox
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/checkout@v7
+      with:
+        ref: 033d91434d169d557d438ddd11c0a87fc5f7c4e5
+        path: upstream
+        persist-credentials: false
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '24'
+        cache: npm
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+    - run: dotnet restore upstream/src --locked-mode
+    - run: dotnet build upstream/src -c Release --no-restore
+    - run: npm ci
+    - run: npm run build
+    - run: npx playwright install --with-deps ${{ matrix.engine }}
+    - run: npm test -- --project=${{ matrix.engine }}
+      env:
+        HANDOFF_API_DIR: upstream
+  handoff-notes-api-api:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+        - ubuntu-latest
+        - windows-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.13'
+    - run: dotnet restore src --locked-mode
+    - run: dotnet build src -c Release --no-restore
+    - run: python -m unittest -v
+    defaults:
+      run:
+        working-directory: modules/handoff-notes-api
+  draft-weave-merge:
+    strategy:
+      matrix:
+        os:
+        - ubuntu-latest
+        - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '24'
+    - run: node --test
+    defaults:
+      run:
+        working-directory: modules/draft-weave
+  focus-receipt-keyboard:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        browser:
+        - chromium
+        - firefox
+    env:
+      FOCUS_BROWSER: ${{ matrix.browser }}
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '24'
+        cache: npm
+        cache-dependency-path: modules/focus-receipt/package-lock.json
+    - run: npm ci
+    - run: npx playwright install --with-deps ${{ matrix.browser }}
+    - run: npm test
+    - run: npm run demo
+    - run: node cli.mjs examples/embedded-flow.json
+    defaults:
+      run:
+        working-directory: modules/focus-receipt

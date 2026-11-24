@@ -1,0 +1,8 @@
+{
+  "name": "draft-weave",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./merge.mjs",
+  "scripts": { "test": "node --test" }
+}

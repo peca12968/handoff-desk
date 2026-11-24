@@ -1,0 +1,12 @@
+{
+  "page": "desk.html",
+  "steps": [
+    {"key":"Tab","role":"button","name":"開始"},
+    {"key":"Tab","role":"textbox","name":"地址","frames":["配送資料"]},
+    {"key":"Tab","role":"button","name":"確認","frames":["配送資料","收件人"]},
+    {"key":"Tab","role":"button","name":"確認","frames":["配送資料"]},
+    {"key":"Tab","role":"button","name":"完成"},
+    {"key":"Shift+Tab","role":"button","name":"確認","frames":["配送資料"]},
+    {"key":"Shift+Tab","role":"button","name":"確認","frames":["配送資料","收件人"]}
+  ]
+}

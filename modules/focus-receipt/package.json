@@ -1,0 +1,9 @@
+{
+  "name": "focus-receipt",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test", "demo": "node cli.mjs examples/archive-flow.json" },
+  "dependencies": { "@playwright/test": "1.65.1" },
+  "engines": { "node": ">=22" }
+}
